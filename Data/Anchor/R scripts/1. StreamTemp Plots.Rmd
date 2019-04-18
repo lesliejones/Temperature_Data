@@ -1,0 +1,65 @@
+---
+title: "1. StreamTemp Plots"
+author: "Leslie Jones"
+date: "January 11, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(StreamThermal)
+```
+
+
+#Import Anchor Data
+```{r}
+AnchorTemp <- read.csv(file="C:/KFHP/Data/STemp/Anchor/AnchorTemp.csv", header=TRUE, sep=",")
+class(AnchorTemp$sampleDate)
+AnchorTemp$sampleDate <- as.Date(AnchorTemp$sampleDate, format= "%Y-%m-%d")
+class(AnchorTemp$sampleDate)
+#head(AnchorTemp, 10)
+```
+Show n by year and month.
+```{r results='asis'}
+month_year <- count(AnchorTemp, year, month) %>% arrange(year)
+datatable(month_year)
+```
+Number of sites by year and month.
+```{r}
+month_site <- count(AnchorTemp, siteID, year, month) %>% arrange(year, month)
+datatable(month_site)
+```
+
+
+##Plot by site
+
+```{r}
+sites <- unique(AnchorTemp$siteID)
+View(sites)
+
+AnchorTemp <- AnchorTemp %>% 
+  mutate(mday = format(sampleDate, "%m-%d"))
+
+for (i in sites) {
+  print(ggplot(AnchorTemp %>% filter(siteID==i), aes(x=as.Date(mday, format = "%m-%d"), y=meanT)) + 
+          geom_point() + 
+          ggtitle(i) +
+          labs(x="Date", y="Temperature (C)") + facet_wrap(~year))
+
+ }
+
+```
+```{r}
+#sitedata2 <- subset(AnchorTemp, AnchorTemp$siteID=="AnchorM" & year==2008)
+#sitedata <- sitedata2[, c(2,3,9,8,7)]
+
+#head(sitedata, 10)
+#sitedata <- sitedata %>% rename (MeanT = meanT, MinT = minT, MaxT= maxT, Date = sampleDate) 
+#View(sitedata)
+#T_variability(sitedata, SeasonSu = c(6, 7, 8, 9))
+```
+

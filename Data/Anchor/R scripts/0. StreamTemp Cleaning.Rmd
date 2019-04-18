@@ -1,0 +1,212 @@
+---
+title: "Stream Temperarture Data"
+author: "Leslie Jones"
+date: "January 8, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+
+###Install StreamThermal package in R
+
+#install.packages("devtools")
+
+library(devtools)
+
+#install_github('tsangyp/StreamThermal')
+
+library(StreamThermal)
+
+```
+
+# Wrangling Temperature Data
+
+##Anchor River- Sue's site labeled AR-3 which is the same as CIK_14 in AKOATS and KNB.
+```{r load data}
+AnchorM_KNB <- read.csv(url("https://cn.dataone.org/cn/v2/resolve/urn:uuid:62f30fe8-25a3-42f6-ae23-ed0ae7a08f69", method = "libcurl"),
+                    stringsAsFactors = FALSE)
+```
+
+New Anchor Rive (AR-3) data from Sue for years 2017 and 2018 to merge with above KNB.I formatted original files to column names matching KNB dataset for merge.
+```{r}
+AnchorM_2017 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK14_2017.csv", header=TRUE, sep=",")
+AnchorM_2018 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK14_2018.csv", header=TRUE, sep=",")
+AnchorM <- rbind(AnchorM_KNB, AnchorM_2017, AnchorM_2018)
+AnchorM$siteID <- "CIK14"
+AnchorM$AKOATS_ID <- NULL
+AnchorM$UseData <- NULL
+AnchorM$Freq <- 96
+head(AnchorM, 10)
+
+AnchorM$Date = AnchorM$sampleDate
+AnchorM <- AnchorM%>% separate(col="Date", into=c("year", "month", "day"))
+unique(AnchorM$year)
+#View (AnchorM)
+```
+
+## AR-2 site from Sue
+
+```{r}
+AR2_2004 <- read.csv(file="C:/KFHP/Data/STemp/Anchor/Sue/Formatted/AR2_2004.csv", header=TRUE, sep=",")
+AR2_2006 <- read.csv(file="C:/KFHP/Data/STemp/Anchor/Sue/Formatted/AR2_2006.csv", header=TRUE, sep=",")
+AR2_2007 <- read.csv(file="C:/KFHP/Data/STemp/Anchor/Sue/Formatted/AR2_2007.csv", header=TRUE, sep=",")
+AR2 <- rbind(AR2_2004, AR2_2006, AR2_2007)
+AR2$siteID <- "AR2"
+AR2$Freq <- 96
+AR2$Date = AR2$sampleDate
+AR2 <- AR2%>% separate(col="Date", into=c("year", "month", "day"))
+unique(AR2$year)
+head(AR2, 10)
+```
+## Two Moose site from Sue
+
+```{r}
+Moose_2004 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK1_2004.csv", header=TRUE, sep=",")
+Moose_2005 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK1_2005.csv", header=TRUE, sep=",")
+Moose_2006 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK1_2006.csv", header=TRUE, sep=",")
+Moose_2007 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK1_2007.csv", header=TRUE, sep=",")
+
+Moose <- rbind(Moose_2004, Moose_2005, Moose_2006, Moose_2007)
+Moose$siteID <- "CIK1"
+Moose$Freq <- 96
+Moose$Date = Moose$sampleDate
+Moose <- Moose %>% separate(col="Date", into=c("year", "month", "day"))
+unique(Moose$year)
+head(Moose, 10)
+```
+## North Fork Anchor River site from Sue 
+Note that 2005 data did not have the full date range after 10/6/2005. Data was truncated. If need data post 10/6/2005 contact Sue for corrected dataset.
+
+```{r}
+NFAnchor_2004 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK2_2004.csv", header=TRUE, sep=",")
+NFAnchor_2005 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK2_2005.csv", header=TRUE, sep=",")
+
+NFAnchor <- rbind(NFAnchor_2004, NFAnchor_2005)
+NFAnchor$siteID <- "CIK2"
+NFAnchor$Freq <- 96
+NFAnchor$Date = NFAnchor$sampleDate
+NFAnchor <- NFAnchor %>% separate(col="Date", into=c("year", "month", "day"))
+unique(NFAnchor$year)
+head(NFAnchor, 10)
+```
+
+## Ruby Creek site from Sue
+
+```{r}
+Ruby_2004 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK3_2004.csv", header=TRUE, sep=",")
+Ruby_2005 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK3_2005.csv", header=TRUE, sep=",")
+Ruby_2006 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK3_2006.csv", header=TRUE, sep=",")
+Ruby_2007 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK3_2007.csv", header=TRUE, sep=",")
+
+Ruby <- rbind(Ruby_2004, Ruby_2005, Ruby_2006, Ruby_2007)
+Ruby$siteID <- "CIK3"
+Ruby$Freq <- 96
+Ruby$Date = Ruby$sampleDate
+Ruby <- Ruby %>% separate(col="Date", into=c("year", "month", "day"))
+unique(Ruby$year)
+head(Ruby, 10)
+```
+
+## Chakok site from Sue 
+Note that 2005 data did not have the full date range after 10/6/2005. Data was truncated. If need data post 10/6/2005 contact Sue for corrected dataset.
+
+```{r}
+Chakok_2004 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK4_2004.csv", header=TRUE, sep=",")
+Chakok_2005 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK4_2005.csv", header=TRUE, sep=",")
+Chakok_2006 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK4_2006.csv", header=TRUE, sep=",")
+Chakok_2007 <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK4_2007.csv", header=TRUE, sep=",")
+
+Chakok <- rbind(Chakok_2004, Chakok_2005, Chakok_2006, Chakok_2007)
+Chakok$siteID <- "CIK4"
+Chakok$Freq <- 96
+Chakok$Date = Chakok$sampleDate
+Chakok <- Chakok %>% separate(col="Date", into=c("year", "month", "day"))
+unique(Chakok$year)
+head(Chakok, 10)
+```
+
+## Twitter Creek site from Sue
+
+```{r}
+Twitter <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK6_2005.csv", header=TRUE, sep=",")
+
+Twitter$siteID <- "CIK6"
+Twitter$Freq <- 96
+Twitter$Date = Twitter$sampleDate
+Twitter <- Twitter %>% separate(col="Date", into=c("year", "month", "day"))
+unique(Twitter$year)
+head(Twitter, 10)
+```
+
+## Beaver Creek site from Sue
+
+```{r}
+Beaver <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK7_2005.csv", header=TRUE, sep=",")
+
+Beaver$siteID <- "CIK7"
+Beaver$Freq <- 96
+Beaver$Date = Beaver$sampleDate
+Beaver <- Beaver %>% separate(col="Date", into=c("year", "month", "day"))
+unique(Beaver$year)
+head(Beaver, 10)
+```
+
+## East Creek site from Sue
+
+```{r}
+East <- read.csv(file="C:/Temperature_Database/Data/Anchor/CIK/CIK8_2005.csv", header=TRUE, sep=",")
+
+East$siteID <- "CIK8"
+East$Freq <- 96
+East$Date = East$sampleDate
+East <- East %>% separate(col="Date", into=c("year", "month", "day"))
+unique(East$year)
+head(East, 10)
+```
+
+##Merge all data into one dataset
+```{r}
+Anchordata <- rbind(East, Beaver, Twitter, Chakok, Ruby, NFAnchor, Moose, AR2, AnchorM)
+count(Anchordata)
+```
+
+##Filter based on number of observations per day
+Created a frequency variable =96 for 15 min obs. number of obs per day/freq = percentage. selected percentage >90
+Then created a keep variable to be merged back to original data and filtered on original dataset.
+```{r}
+Anchor_filter <- Anchordata %>% group_by(siteID, Freq, sampleDate)  %>% summarize(n = n())  %>% mutate(percent = n/Freq)  %>% filter(percent > 0.90) 
+head(Anchor_filter,10)
+Anchor_filter$keep <-  1
+Anchor2 <- Anchor_filter %>%  ungroup() %>% select ("siteID", "sampleDate", "keep")
+head(Anchor2, 10)
+#merge back to original datset and filter again
+Anchor3 <- left_join(Anchordata, Anchor2, by = c("siteID" = "siteID", "sampleDate" = "sampleDate"))
+#View(Anchor3)
+Anchor_clean <- Anchor3 %>%  filter (keep==1) 
+
+#View(Anchor_clean)
+```
+##Look at number of observations by month and remove all months outside of open water season June thru September
+```{r}
+View(Anchor_clean)
+unique(Anchor_clean$year)
+unique(Anchor_clean$month)
+count(Anchor_clean, month, year)
+Anchor_clean2 <- Anchor_clean %>% filter(month=="05"| month=="06"|month=="07" | month=="08" | month=="09")
+unique(Anchor_clean2$month)
+```
+#Calculate daily mean, min, and max metrics
+```{r}
+AnchorTemp <- Anchor_clean2 %>% group_by(siteID,sampleDate, year, month, day) %>% summarize(meanT=mean(Temperature), minT=min(Temperature), maxT=max(Temperature))
+View(AnchorTemp)
+glimpse(AnchorTemp)
+unique(AnchorTemp$year)
+#write to csv
+write.csv(AnchorTemp, "C:/KFHP/Data/STemp/Anchor/AnchorTemp.csv")
+```
+
+
