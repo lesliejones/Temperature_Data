@@ -1,0 +1,13 @@
+FID,Site_ID,Watershed,Latitude,Longitude,F_____m_,Descriptio
+0,ANCH,Anchor confluence,59.772340000000000,-151.835600000000000,4, 
+1,NANC,North Anchor confluence,59.774740000000001,-151.829250000000000,5, 
+2,SANC,South Anchor confluence,59.771500000000003,-151.830860000000000,3, 
+3,NINI,Ninilchik confluence,60.048380000000002,-151.664469999999990,5,Park at Village bridge and sample about 10yds downstream - should get new GPS
+4,DEEP,Deep Creek confluence,60.029380000000003,-151.681590000000000,6, 
+5,STAR,Stariski confluence,59.852699999999999,-151.793520000000000,2, 
+6,COTT-A,North Anchor HW alder,59.860790000000001,-151.554520000000000,4,"Park at gas marker 9.4, follow trail to stream crossing"
+7,COTT-W,North Anchor HW wetland,59.871609999999997,-151.642519999999990,3,Discharge at downstream edge of bidge
+8,COTT-C,North Anchor HW confluence,59.852589999999999,-151.667370000000010,2,Can turn around across the bridge and up the hill. Call Ron to join.
+9,STAR-A, ,0.000000000000000,0.000000000000000,0, 
+10,STAR-W, ,0.000000000000000,0.000000000000000,0, 
+11,STAR-C, ,0.000000000000000,0.000000000000000,0, 
