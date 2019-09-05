@@ -1,0 +1,428 @@
+---
+title: "Cleaning of raw data for Anchor and Kenai projects"
+author: "Becky"
+date: "August 28, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(readxl)
+library(stringr)
+library(tidyverse)
+
+```
+
+# Read in all Anchor Data
+
+## Cook Inletkeeper data for Anchor
+
+First start with Sue's data from CIK. All data are in C and dates and times read in fine. Put into a list and name each tibble in the list with the site name only (get rid of the years).
+
+```{r}
+
+CIK <- list.files("./Data/Anchor/CIK", full.names = TRUE, recursive = TRUE, 
+                             pattern = ".csv")
+
+#get file name only
+CIK.names <- regmatches(CIK, regexec('CIK/(.*?)\\_', CIK)) 
+CIK.names <- lapply(CIK.names, '[', 2) %>% unlist
+
+#read data into a list and add names
+CIKlist <- lapply(CIK, read_csv)
+names(CIKlist) <- CIK.names
+```
+
+Combine all the data into one data frame since many sites were provided as separate years.
+
+```{r}
+
+CIKdat <- bind_rows(CIKlist, .id = "Site") %>% 
+  select(-AKOATS_ID, -UseData) 
+
+CIKdat$dt1 <- paste(CIKdat$sampleDate, CIKdat$sampleTime)
+
+#adding in some extra data modifiers for figures.
+CIKdat <- CIKdat %>% 
+  mutate(dateTime = as.POSIXct(dt1, format = "%Y-%m-%d %H:%M:%S"),
+         doy = as.numeric(format(dateTime, "%j")),
+         year = as.numeric(format(dateTime, "%Y")))
+
+#checking that everything is complete - 4 records didn't convert from dt1, not sure why.
+CIKdat %>% filter(is.na(doy))
+
+```
+
+Sue archived historic Anchor River data on KNB. See Leslie's data cleaning notes, that should be combined with the site CIK14 with data from 2017 and 2018 that was brought in above.
+
+```{r}
+
+CIKknb <- read_csv(url("https://cn.dataone.org/cn/v2/resolve/urn:uuid:62f30fe8-25a3-42f6-ae23-ed0ae7a08f69", method = "libcurl"))
+
+CIKdat <- bind_rows(CIKdat, CIKknb %>% 
+                      filter(UseData == 1) %>% 
+                      select(-AKOATS_ID, -UseData))
+```
+
+
+## APU data for Anchor
+
+Same steps as above, read all files into a list and then combine into a data frame.
+
+```{r}
+
+APU <- list.files("./Data/Anchor/APU", full.names = TRUE, recursive = TRUE, 
+                             pattern = ".csv")
+
+#get file name only
+APU.names <- regmatches(APU, regexec('APU/(.*?)\\_', APU)) 
+APU.names <- lapply(APU.names, '[', 2) %>% unlist
+
+#read data into a list and add names
+APUlist <- lapply(APU, read_csv)
+names(APUlist) <- APU.names
+
+#combine data into one dataframe
+APUdat <- bind_rows(APUlist, .id = "Site") %>% 
+  mutate(sampleTime = case_when(is.na(sampleTime) ~ SampleTime,
+                                TRUE ~ sampleTime),
+         sampleDate = as.Date(sampleDate, format = "%m/%d/%Y"))
+
+
+APUdat$dt1 <- paste(APUdat$sampleDate, APUdat$sampleTime)
+
+#adding in some extra data modifiers for figures and remove extra time column
+APUdat <- APUdat %>% 
+  mutate(dateTime = as.POSIXct(dt1, format = "%Y-%m-%d %H:%M:%S"),
+         doy = as.numeric(format(dateTime, "%j")),
+         year = as.numeric(format(dateTime, "%Y"))) %>% 
+  select(-SampleTime)
+
+```
+
+## Kachemak Bay Research Reserve Data
+
+For KBERR, import the raw data. All of the raw data file names have been entered into a metadata worksheet where the file names match a KBERR site name, which matches a KBERR site name in Steve's shapefiles. For the raw data files, names them by their file name for now.
+
+* For 2008, still need to rectify some of the locations for sites that got moved in May 2008 (or drop these files).  
+* We probably can't use 2011 data (but ask Steve) as these are sites from Michelle's study of coho overwintering and are mostly side channels. 
+* 2018 data folder is currently a duplicate of the data in 2017, need to ask Steve if they actually have data for these sites from another year.
+
+For 2008 data, use the tidbits on the bottoms of the streams for Anchor R. model, unless some are bad, could replace them with tops at same site. Mix of xls and csv files that need to be read in separately.
+
+Start with excel files and read_excel function. The dates and times need conversion at the end because read_excel is dealing with excel data types. It reads in both dates and times as posixct in central time (because there is no time zone specification in Excel). Convert times to alaska time zone then convert to hms, which stores times only. Convert dates to date class. Also there are two files with an extra column that had to be read in separately and appended.
+
+```{r}
+
+# start with xls files from 2008
+dat08xls <- list.files("Data/RAW Data/Anchor/KBERR/2008/Bottom", full.names = TRUE,
+                    recursive = TRUE, pattern = ".xls")
+
+#need to skip HWS01 and HWS026 and append later because they have an extra time column that needs to be deleted.
+
+ignore <- c("Data/RAW Data/Anchor/KBERR/2008/Bottom/HWS001_20080814.xls", 
+            "Data/RAW Data/Anchor/KBERR/2008/Bottom/HWS026_20080806.xls")
+
+dat08list <- lapply(dat08xls[!(dat08xls %in% ignore)], 
+                function(x) read_excel(x, skip = 3,
+                                       col_names = c("sampleDate",
+                                                     "sampleTime",
+                                                     "Temperature"),
+                                       col_types = c("date", "guess", "numeric")))
+
+names(dat08list) <- sub(".*KBERR/", "", dat08xls[!(dat08xls %in% ignore)])
+
+dat08df <- bind_rows(dat08list, .id = "Site") 
+
+hws01 <- read_excel("Data/RAW Data/Anchor/KBERR/2008/Bottom/HWS001_20080814.xls", 
+                    skip = 3, col_names = c("sampleDate", "sampleTime", "delete",  
+                                            "Temperature"),
+                    col_types = c("date", "date", "date", "numeric"))
+
+hws01 <- hws01 %>% 
+  select(-delete) %>% 
+  mutate(Site = "2008/Bottom/HWS001_20080814.xls")
+
+dat08df <- bind_rows(dat08df, hws01)
+
+hws26 <- read_excel("Data/RAW Data/Anchor/KBERR/2008/Bottom/HWS026_20080806.xls", 
+                    skip = 3, col_names = c("sampleDate", "delete", "sampleTime", 
+                                            "Temperature"),
+                    col_types = c("date", "date", "date", "numeric"))
+
+hws26 <- hws26 %>% 
+  select(-delete) %>% 
+  mutate(Site = "2008/Bottom/HWS026_20080806.xls")
+
+dat08df <- bind_rows(dat08df, hws26)
+```
+
+Missing data for SANC-1203-L and NINI-545-U because only loggers for those sites are in the top file. Add them in here because they are excel files, then fix dates and times.
+
+```{r}
+
+hws29 <- read_excel("Data/RAW Data/Anchor/KBERR/2008/Top/HWS029_20080806.xls", 
+                    skip = 3, col_names = c("sampleDate", "sampleTime", 
+                                            "Temperature"),
+                    col_types = c("date", "date", "numeric"))
+
+hws29 <- hws29 %>% 
+  mutate(Site = "2008/Top/HWS029_20080806.xls")
+
+dat08df <- bind_rows(dat08df, hws29)
+
+
+hws28may <- read_excel("Data/RAW Data/Anchor/KBERR/2008/Top/HWS028_20080522.xls", 
+                    skip = 3, col_names = c("sampleDate", "sampleTime", 
+                                            "Temperature"),
+                    col_types = c("date", "date", "numeric")) %>%
+  mutate(Site = "2008/Top/HWS028_20080522.xls")
+
+dat08df <- bind_rows(dat08df, hws28may)
+
+hws28aug <- read_excel("Data/RAW Data/Anchor/KBERR/2008/Top/HWS028_20080807.xls", 
+                    skip = 3, col_names = c("sampleDate", "sampleTime", 
+                                            "Temperature"),
+                    col_types = c("date", "date", "numeric")) %>% 
+  mutate(Site = "2008/Top/HWS028_20080807.xls")
+
+dat08df <- bind_rows(dat08df, hws28aug)
+
+```
+
+Fix dates and times in excel files that have been used to create dat08df.
+
+```{r}
+#fix times in excel files that are now in dat08df
+dat08df <- dat08df %>% 
+  mutate(testtz = as.POSIXct(format(sampleTime), tz = "America/Anchorage"),
+         sampleTime = as.hms(testtz),
+         sampleDate = as.Date(sampleDate)) %>% 
+  select(-testtz)
+```
+
+Read in set of csv files using read_csv, which does a much better job with dates and times and then append all the 2008 data together.
+
+```{r}
+
+dat08csv <- list.files("Data/RAW Data/Anchor/KBERR/2008/Bottom", full.names = TRUE,
+                    recursive = TRUE, pattern = ".csv")
+
+dat08csvlist <- lapply(dat08csv, 
+                       function(x) read_csv(x, skip = 3,
+                                            col_names = c("sampleDate",
+                                                          "sampleTime",
+                                                          "Temperature"),
+                                            col_types = list(col_date(format = "%m/%d/%y"),
+                                                             col_time(),
+                                                             col_double())))
+
+names(dat08csvlist) <- sub(".*KBERR/", "", dat08csv)
+
+dat08csvdf <- bind_rows(dat08csvlist, .id = "Site") 
+
+dat08 <- bind_rows(dat08df, dat08csvdf)
+
+```
+
+Data from 2013, there are only four files.
+
+```{r}
+
+dat13 <- list.files("Data/RAW Data/Anchor/KBERR/2013", full.names = TRUE,
+                    recursive = TRUE, pattern = ".csv")
+
+dat13list <- lapply(dat13,
+                    function(x) read_csv(x, skip = 14,
+                                         col_names = c("sampleDate",
+                                                       "sampleTime",
+                                                       "delete1",
+                                                       "delete2",
+                                                       "Temperature")))
+
+names(dat13list) <- sub(".*KBERR/", "", dat13)
+
+dat13df <- bind_rows(dat13list, .id = "Site") 
+
+dat13df <- dat13df %>% 
+  select(-delete1, -delete2)
+
+KBRdat <- bind_rows(dat08, dat13df)
+
+```
+
+Data from 2017. These are all csv files. Skip first two rows and first columns. Dates and times are formatted in second column as date-times. All temperatures are in F and should be converted to C.
+
+```{r}
+
+dat17 <- list.files("Data/RAW Data/Anchor/KBERR/2017", full.names = TRUE,
+                    recursive = TRUE, pattern = ".csv")
+
+dat17list <- lapply(dat17,
+                    function(x) read_csv(x, skip = 2,
+                                         col_names = c("skip",
+                                                       "datetime",
+                                                       "tempF",
+                                                       "skip1"),
+                                         col_types = cols_only(datetime = col_datetime(format = "%m/%d/%y %T %p"),
+                                                               tempF = "d")))
+
+
+names(dat17list) <- sub(".*KBERR/", "", dat17)
+
+dat17df <- bind_rows(dat17list, .id = "Site") 
+
+dat17df <- dat17df %>% 
+  mutate(testtz = as.POSIXct(format(datetime), tz = "America/Anchorage"),
+         sampleTime = as.hms(testtz),
+         sampleDate = as.Date(datetime),
+         Temperature = (tempF - 32) * (5/9)) %>% 
+  select(-datetime, -testtz, -tempF)
+
+KBRdat <- bind_rows(KBRdat, dat17df)
+
+```
+
+Add in extra date fields for figures.
+
+```{r}
+
+KBRdat$dt1 <- paste(KBRdat$sampleDate, KBRdat$sampleTime)
+
+#adding in some extra date modifiers for figures.
+KBRdat <- KBRdat %>% 
+  mutate(dateTime = as.POSIXct(dt1, format = "%Y-%m-%d %H:%M:%S"),
+         doy = as.numeric(format(dateTime, "%j")),
+         year = as.numeric(format(dateTime, "%Y")))
+
+```
+
+Need to add in the KBERR site names, which aren't necessarily the same as the file names. See the notes in the metadata file I created to track which data files we can easily link to locations and which we are still unsure about.
+
+```{r}
+KBR_md <- read_excel("Data/RAW Data/Anchor/KBERR/KBERR_metadata_rss.xlsx")
+
+KBRdat <- left_join(KBRdat, KBR_md %>% select(`Raw data file name`, `KBERR site name`, `KBERR location name (SITE_ID2)`), by = c("Site" = "Raw data file name"))
+
+KBRdat <- KBRdat %>% 
+  rename(fileName = Site,
+         Site = `KBERR site name`,
+         shpName = `KBERR location name (SITE_ID2)`)
+```
+
+Currently don't have lat/longs for one site that was imported because it had a logger in the bottom folder. There is another site (STAR-171-Middle - old) that has data in the top folder, but we don't have a lat/long for that site.
+
+```{r}
+KBRdat %>% filter(shpName == "?") %>% distinct(shpName, Site)
+```
+
+A total of 31 sites in the KBR dataset which matches the location table in the mysql database.
+
+```{r}
+KBRdat %>% distinct(shpName) %>% arrange(shpName) %>% print(n=40)
+```
+
+## KBERR comparison of top and bottom logger data
+
+Compare the differences between top and bottom loggers. If they are very different, we could be introducting some bias into the dataset. 
+
+Grab the top loggers for NANC-44-U, and NINI-619-L to compare with bottom loggers already in the KBRdat file.
+
+```{r}
+topFiles <- c("Data/RAW Data/Anchor/KBERR/2008/Top/HWS030_20080519.xls", 
+              "Data/RAW Data/Anchor/KBERR/2008/Top/HWS030_20080812.xls", 
+              "Data/RAW Data/Anchor/KBERR/2008/Top/HWS023_20080609.xls", 
+              "Data/RAW Data/Anchor/KBERR/2008/Top/HWS023_20080811.xls")
+
+topList <- lapply(topFiles, 
+                function(x) read_excel(x, skip = 3,
+                                       col_names = c("sampleDate",
+                                                     "sampleTime",
+                                                     "Temperature"),
+                                       col_types = c("date", "guess", "numeric")))
+
+names(topList) <- sub(".*KBERR/", "", topFiles)
+
+topdf <- bind_rows(topList, .id = "Site") 
+
+#fix times
+topdf <- topdf %>% 
+  mutate(testtz = as.POSIXct(format(sampleTime), tz = "America/Anchorage"),
+         sampleTime = as.hms(testtz),
+         sampleDate = as.Date(sampleDate)) %>% 
+  select(-testtz)
+
+topdf$dt1 <- paste(topdf$sampleDate, topdf$sampleTime)
+
+#adding in some extra date modifiers for figures.
+topdf <- topdf %>% 
+  mutate(dateTime = as.POSIXct(dt1, format = "%Y-%m-%d %H:%M:%S"),
+         doy = as.numeric(format(dateTime, "%j")),
+         year = as.numeric(format(dateTime, "%Y")))
+
+topdf <- left_join(topdf, KBR_md %>% 
+                     select(`Raw data file name`, `KBERR site name`, 
+                            `KBERR location name (SITE_ID2)`), 
+                   by = c("Site" = "Raw data file name")) %>% 
+  rename(fileName = Site,
+         Site = `KBERR site name`,
+         shpName = `KBERR location name (SITE_ID2)`)
+
+```
+
+Plots comparing temperatures at top and bottom sensors for NINI-545-U and NINI-619-L. Some pretty drastic differences.
+
+```{r}
+ggplot() +
+  geom_line(data = topdf %>% filter(shpName == "NANC-44-U",
+                                    sampleDate > "2008-06-01"),
+            aes(x = dateTime, y = Temperature), color = "blue") +
+  geom_line(data = KBRdat %>% filter(shpName == "NANC-44-U",
+                                    sampleDate > "2008-06-01"),
+            aes(x = dateTime, y = Temperature), color = "red") +
+  labs(title = "NANC-44-U", subtitle = "Top temperature in blue")
+
+left_join(KBRdat %>% 
+            filter(shpName == "NANC-44-U",
+                   sampleDate > "2008-07-01",
+                   sampleDate < "2008-07-31") %>% 
+            group_by(sampleDate) %>% 
+            summarize(meanTemp = mean(Temperature)),
+          topdf %>% 
+            filter(shpName == "NANC-44-U",
+                   sampleDate > "2008-07-01",
+                   sampleDate < "2008-07-31") %>% 
+            group_by(sampleDate) %>% 
+            summarize(meanTopTemp = mean(Temperature))) %>% 
+  mutate(diffMeanDailyTemp = meanTemp - meanTopTemp)
+
+
+ggplot() +
+  geom_line(data = topdf %>% filter(shpName == "NINI-619-L",
+                                    sampleDate > "2008-06-01"),
+            aes(x = dateTime, y = Temperature), color = "blue", size = 1) +
+  geom_line(data = KBRdat %>% filter(shpName == "NINI-619-L",
+                                    sampleDate > "2008-06-01"),
+            aes(x = dateTime, y = Temperature), color = "red", size = 0.5) +
+  labs(title = "NINI-619-L", subtitle = "Top temperature in blue")
+
+left_join(KBRdat %>% 
+            filter(shpName == "NINI-619-L",
+                   sampleDate > "2008-07-01",
+                   sampleDate < "2008-07-31") %>% 
+            group_by(sampleDate) %>% 
+            summarize(meanTemp = mean(Temperature)),
+          topdf %>% 
+            filter(shpName == "NINI-619-L",
+                   sampleDate > "2008-07-01",
+                   sampleDate < "2008-07-31") %>% 
+            group_by(sampleDate) %>% 
+            summarize(meanTopTemp = mean(Temperature))) %>% 
+  mutate(diffMeanDailyTemp = meanTemp - meanTopTemp)
+```
+
+
+
+
+

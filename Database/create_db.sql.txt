@@ -1,0 +1,86 @@
+
+#sql script for creating tables in db and setting foreign key constraints.
+#data uploaded into tables using phpmyadmin import tool since db on server.
+
+#run
+CREATE TABLE affliation (
+  aff_id INT NOT NULL,
+  PRIMARY KEY (aff_id),
+  name VARCHAR(40) NOT NULL,
+  city VARCHAR(20) NOT NULL,
+  state VARCHAR(2) NOT NULL,
+  agency_id INT NOT NULL,
+ );
+
+
+#run
+CREATE TABLE contact (
+  con_id INT NOT NULL,
+  PRIMARY KEY (con_id),
+  firstname VARCHAR(20) NOT NULL,
+  lastname VARCHAR(20) NOT NULL,
+  email VARCHAR(40) NOT NULL,
+  phone VARCHAR(10),
+  affiliation_id INT NOT NULL
+);
+
+#run
+CREATE TABLE agency (
+  agy_id INT NOT NULL,
+  PRIMARY KEY (agy_id),
+  name VARCHAR(60)
+);
+
+#run
+CREATE TABLE location (
+  loc_id INT NOT NULL,
+  PRIMARY KEY (loc_id),
+  accs_siteid VARCHAR(20) NOT NULL,
+  contact_siteid VARCHAR(20),
+  description VARCHAR(200),
+  latitude DECIMAL(8,5) NOT NULL,
+  longitude DECIMAL(8,5) NOT NULL,
+  datum VARCHAR(20),
+  waterbody_id INT,
+  contact_id INT NOT NULL
+);
+
+#run
+CREATE TABLE waterbody (
+  wtr_id INT NOT NULL,
+  PRIMARY KEY (wtr_id),
+  name VARCHAR(50)
+);
+
+#run
+CREATE TABLE data (
+  dat_id INT NOT NULL,
+  PRIMARY KEY (dat_id),
+  date DATE NOT NULL,
+  time TIME NOT NULL,
+  temperature DECIMAL(5,2) NOT NULL,
+  location_id INT NOT NULL
+);
+
+
+#not run
+LOAD DATA INFILE 'D:/AKNHP/Temperature_Data/contact.csv'
+INTO TABLE contact
+COLUMNS TERMINATED BY ','
+IGNORE 1 LINES;
+
+
+ALTER TABLE contact
+  ADD FOREIGN KEY
+  (affiliation_id) 
+  REFERENCES affiliation (id); 
+
+ALTER TABLE location
+  ADD CONSTRAINT location_fk FOREIGN KEY
+  (contact_id) 
+  REFERENCES contact (id); 
+
+ALTER TABLE data
+  ADD CONSTRAINT data_fk FOREIGN KEY
+  (location_id) 
+  REFERENCES location (id); 

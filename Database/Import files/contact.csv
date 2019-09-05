@@ -1,0 +1,4 @@
+con_id,firstname,lastname,email,phone,affiliation_id
+1,Sue,Mauger,sue@inletkeeper.org,9072354068,1
+2,Steve,Baird,sjbaird@alaska.edu,9072351594,2
+3,Robert,Murphy,rdmurphy@alaska.pacific.edu,,3

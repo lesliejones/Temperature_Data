@@ -1,0 +1,201 @@
+---
+title: "Raw Data QA"
+author: "Becky"
+date: "August 28, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+# Anchor River Data
+
+## Flags
+
+It would be nice to create a function that generates all of the necessary flags for a time series.
+
+
+## Get Homer air temperature for checking against datasets.
+
+```{r}
+library(rnoaa)
+
+homer_air <- ghcnd_search(stationid = "USW00025507", date_min = "2010-01-01", 
+                          date_max = "2019-08-31", var = "TAVG")
+
+
+```
+
+
+## Cook Inletkeeper
+
+Check for any temperatures greater then 20 and make sure they are part of a pattern.
+
+```{r}
+gt20 <- CIKdat %>% 
+  group_by(Site, year, sampleDate) %>% 
+  summarize(mean = mean(Temperature)) %>% 
+  filter(mean > 20)
+
+CIKdat %>% 
+  group_by(Site, year, sampleDate) %>% 
+  summarize(mean = mean(Temperature)) %>% 
+  filter(Site == gt20$Site & year == gt20$year) %>% 
+  ggplot(aes(x = sampleDate, y = mean)) +
+  geom_line()
+```
+
+
+QA steps that can be automated include calculating daily ranges from raw data. High daily ranges can be reviewed as air temperatures. Really low daily temperatures could indicate burial, but could also indicate rain damping temperatures.
+
+```{r}
+CIKdat %>% 
+  group_by(Site, sampleDate) %>% 
+  summarize(dailyRange = max(Temperature) - min(Temperature)) %>% 
+  arrange(desc(dailyRange))
+
+
+  
+```
+
+Plot of daily ranges.
+
+```{r}
+CIKdat %>% 
+  group_by(Site, sampleDate, doy, year) %>% 
+  summarize(dailyRange = max(Temperature) - min(Temperature)) %>% 
+  ggplot(aes(x = doy, y = dailyRange, color = as.factor(year))) +
+  geom_line() +
+  facet_wrap(~Site, scale = "free_x")
+```
+
+
+```{r}
+CIKdat %>% 
+  ggplot(aes(x = doy, y = Temperature, color = as.factor(year))) +
+ # geom_point() +
+  geom_line() +
+  facet_wrap(~Site, scale = "free_x")
+```
+
+
+## APU Data
+APU data doesn't seem like it has been QAed. Lots of temps > 20 at HB3, another site that looks like it went awry in plot comparing sites below. Need to do some more QA on these sites, maybe try the NCEAS function.
+
+
+Check for any temperatures greater then 20 and make sure they are part of a pattern.
+
+```{r}
+gt20 <- APUdat %>% 
+  group_by(Site, year, sampleDate) %>% 
+  summarize(mean = mean(Temperature)) %>% 
+  filter(mean > 20)
+
+APUdat %>% 
+  filter(Temperature > 20)
+
+
+```
+
+
+QA steps that can be automated include calculating daily ranges from raw data. High daily ranges can be reviewed as air temperatures. Really low daily temperatures could indicate burial, but could also indicate rain damping temperatures.
+
+```{r}
+APUdat %>% 
+  group_by(Site, sampleDate) %>% 
+  summarize(dailyRange = max(Temperature) - min(Temperature)) %>% 
+  filter(dailyRange > 10) %>% 
+  arrange(desc(dailyRange))
+```
+
+Plot of daily ranges.
+
+```{r}
+APUdat %>% 
+  group_by(Site, sampleDate, doy, year) %>% 
+  summarize(dailyRange = max(Temperature) - min(Temperature)) %>% 
+  ggplot(aes(x = doy, y = dailyRange, color = as.factor(year))) +
+  geom_line() +
+  facet_wrap(~Site)
+```
+
+Focus in on APU3 and APU9 when daily ranges spike.
+
+```{r}
+APUdat %>% 
+  group_by(Site, sampleDate, doy, year) %>% 
+  summarize(dailyRange = max(Temperature) - min(Temperature)) %>% 
+  filter(Site == "APU3") %>% 
+  ggplot(aes(x = doy, y = dailyRange, color = as.factor(year))) +
+  geom_line() 
+```
+
+
+
+```{r}
+APUdat %>% 
+  ggplot(aes(x = dateTime, y = Temperature)) +
+ # geom_point() +
+  geom_line() +
+  facet_wrap(~Site)
+```
+
+Look at sites APU3 and APU9 more closely, both look like they are air temperatures.
+
+```{r}
+APUdat %>% 
+  filter(Site == "APU3" & sampleDate > "2015-06-01" & sampleDate < "2015-07-01") %>% 
+  ggplot(aes(x = dateTime, y = Temperature)) +
+  geom_line()
+```
+
+
+Can wrap into a pdf to get larger plots for examining bad data.
+
+```{r}
+pdf("output/APUdata.pdf", width = 11, height = 8.5)
+sites <- APUdat %>% distinct(Site) %>% pull(Site)
+for(i in sites) {
+  p <- APUdat %>% 
+    filter(Site == i) %>% 
+    ggplot(aes(x = dateTime, y = Temperature, color = as.factor(year))) +
+    geom_line() +
+    labs(title = i) +
+    theme(legend.position = "bottom")
+  print(p)
+}
+dev.off()
+
+```
+
+## KBERR Data
+
+Nothing has been cleaned on the KBERR datasets, lots of air temperature in the beginning and ending of data files. May be air spikes or burials in the datasets.
+
+```{r}
+KBRdat %>% 
+  ggplot(aes(x = doy, y = Temperature, color = as.factor(year))) +
+  geom_line() +
+  facet_wrap(~Site)
+```
+
+Can wrap into a pdf to get larger plots for examining bad data.
+
+```{r}
+pdf("output/KBRdata.pdf", width = 11, height = 8.5)
+sites <- KBRdat %>% distinct(Site) %>% pull(Site)
+for(i in sites) {
+  p <- KBRdat %>% 
+    filter(Site == i) %>% 
+    ggplot(aes(x = dateTime, y = Temperature, color = as.factor(year))) +
+    geom_line() +
+    labs(title = i)
+  print(p)
+}
+dev.off()
+
+```
+

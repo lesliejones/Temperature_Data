@@ -1,0 +1,54 @@
+ACCS_siteid,contact_siteid,Description,latitude,longitude,datum,contact_id,waterbody_id
+CIK14,AnchorM,Anchor mainstem below confluence of North and South Forks,59.772117,-151.834917,,1,Anchor River
+AR2,AR2,AR2 ,59.718333,-151.64095,,1,Anchor River
+CIK7,Beaver,above confluence with South Fork on Beaver Creek ,59.75205,-151.510383,,1,Beaver Creek
+CIK4,Chakok,above confluence with North Fork,59.8095,-151.724883,,1,Lower Chakok River
+CIK8,East,East Anchor River subwatershed boundary,59.752733,-151.510867,,1,East Creek
+CIK1,Moose,South Fork CEMP site,59.75755,-151.779133,,1,Two Moose Creek
+CIK2,NFAnchor,above confluence with Chakok River,59.794833,-151.72875,,1,Upper North Fork Anchor
+CIK3,Ruby,South Fork CEMP site,59.71,-151.6975,,1,Ruby Creek
+CIK6,Twitter,above confluence with South Fork,59.7175,-151.64065,,1,Twitter Creek
+APU5,Data_Logger_1,DL1 first bridge Chakok rd,59.79417038,-151.7295868,,2,North Fork Anchor Chakok
+APU13,Data_Logger_10,DL10 Tall tree lane,59.5183,-151.39443,,2,Chakok River
+APU6,Data_Logger_2,DL2 private property Reese,59.81684569,-151.7142965,,2,Chakok River
+APU7,Data_Logger_3,DL3 first bridge Nikolivisk,59.80040445,-151.6389956,,2,North Fork Anchor Nikolivisk
+APU8,Data_Logger_4,DL4 first bridge south fork,59.71724643,-151.6444177,,2,South Fork Anchor
+APU9,Data_Logger_5,DL5 off Sterling Hwy,59.74675016,-151.7525042,,2,South Fork Anchor Sterling
+APU10,Data_Logger_6,DL6 ADF&G weir site,59.77182401,-151.8340092,,2,Confluence NS Forks
+APU11,Data_Logger_7,DL7 pullout on Sterling,59.71146647,-151.6874863,,2,South Fork Anchor
+APU12,Data_Logger_8,DL8 ADF&G off Nfork Rd,59.4643,-151.497,,2,North Fork Anchor River
+APU1,hobo 2,hobo 2 2015 mainstem bridge,59.77232157,-151.8361442,,2,North South Fork Confluence 
+APU2,hobo 3,hobo 3 2015 Tall Tree lane off Sterling,59.86385692,-151.6575542,,2,Upper Chakok
+APU3,hobo 4,hobo 4 2015 Cottonwood lane of Nfork rd,59.79403445,-151.7514673,,2,North Fork Anchor Cottonwood
+APU4,hobo 5,hobo 5 2015 off Nfork Rd,59.79170378,-151.6156565,,2,Upper North Fork Anchor
+KBERR7,COTT-A ,COTT-A ,59.86079,-151.55452,,3,North Anchor HW alder
+KBERR9,COTT-C ,COTT-C ,59.85259,-151.66737,,3,North Anchor HW confluence
+KBERR8,COTT-W ,COTT-W ,59.87161,-151.64252,,3,North Anchor HW wetland
+KBERR5,DEEP ,DEEP ,60.02938,-151.68159,,3,Deep Creek confluence
+KBERR2,NANC ,NANC ,59.77474,-151.82925,,3,North Anchor confluence
+KBERR45,NANC-44-L,NANC-44-L,59.8613647,-151.6583606,,3,
+KBERR46,NANC-44-M,NANC-44-M,59.87247013,-151.6421482,,3,
+KBERR47,NANC-44-U,NANC-44-U,59.88481256,-151.6319101,,3,
+KBERR4,NINI ,NINI ,60.04838,-151.66447,,3,Ninilchik confluence
+KBERR48,NINI-545-L,NINI-545-L,60.04977699,-151.6320347,,3,
+KBERR49,NINI-545-M,NINI-545-M,60.06274394,-151.6208301,,3,
+KBERR50,NINI-545-U,NINI-545-U,60.0663771,-151.5866025,,3,
+KBERR51,NINI-619-L,NINI-619-L,60.06174505,-151.3576328,,3,
+KBERR52,NINI-619-M,NINI-619-M,60.05355602,-151.3546247,,3,
+KBERR53,NINI-619-U,NINI-619-U,60.04883563,-151.3396357,,3,
+KBERR13,PJ Lower,PJ Lower 2013,59.751352,-151.74683,,3,
+KBERR14,PJ Mid ,PJ Mid 2013,59.750653,-151.713357,,3,
+KBERR3,SANC ,SANC ,59.7715,-151.83086,,3,South Anchor confluence
+KBERR40,SANC-1203-L,SANC-1203-L,59.75828154,-151.5859574,,3,
+KBERR41,SANC-1203-M,SANC-1203-M,59.77937755,-151.5659485,,3,
+KBERR42,SANC-1203-U,SANC-1203-U,59.78078445,-151.5376959,,3,
+KBERR6,STAR ,STAR ,59.8527,-151.79352,,3,Stariski confluence
+KBERR15,STAR 171 Lower ,STAR 171 Lower 2013,59.844918,-151.78505,,3,
+KBERR16,STAR 171 Upper,STAR 171 Upper 2013,59.839438,-151.781433,,3,
+KBERR43,STAR-171-M,STAR-171-M,59.8406447,-151.7829479,,3,
+KBERR44,STAR-171-U,STAR-171-U,59.83263004,-151.7610383,,3,
+KBERR54,STAR-69-L,STAR-69-L,59.86957967,-151.7294595,,3,
+KBERR55,STAR-69-M,STAR-69-M,59.87894801,-151.6934264,,3,
+KBERR56,STAR-69-U,STAR-69-U,59.88615642,-151.6758017,,3,
+KBERR10,STAR-A,STAR-A,59.91127,-151.498532,,3,Stariski alder
+KBERR11,STAR-W,STAR-W,59.928383,-151.627714,,3,Stariski wetland
