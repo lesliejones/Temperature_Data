@@ -81,6 +81,23 @@ CIKdat %>%
   facet_wrap(~Site, scale = "free_x")
 ```
 
+plot of all CIK data.
+
+```{r}
+pdf("output/CIKdata.pdf", width = 11, height = 8.5)
+sites <- CIKdat %>% distinct(Site) %>% pull(Site)
+for(i in sites) {
+  p <- CIKdat %>% 
+    filter(Site == i) %>% 
+    ggplot(aes(x = dateTime, y = Temperature, color = as.factor(year))) +
+    geom_line() +
+    labs(title = i)
+  print(p)
+}
+dev.off()
+
+```
+
 
 ## APU Data
 APU data doesn't seem like it has been QAed. Lots of temps > 20 at HB3, another site that looks like it went awry in plot comparing sites below. Need to do some more QA on these sites, maybe try the NCEAS function.
