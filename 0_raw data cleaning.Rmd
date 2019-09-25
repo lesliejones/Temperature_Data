@@ -10,6 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(readxl)
 library(stringr)
+library(hms)
 library(tidyverse)
 
 ```
@@ -41,17 +42,6 @@ Combine all the data into one data frame since many sites were provided as separ
 CIKdat <- bind_rows(CIKlist, .id = "Site") %>% 
   select(-AKOATS_ID, -UseData) 
 
-CIKdat$dt1 <- paste(CIKdat$sampleDate, CIKdat$sampleTime)
-
-#adding in some extra data modifiers for figures.
-CIKdat <- CIKdat %>% 
-  mutate(dateTime = as.POSIXct(dt1, format = "%Y-%m-%d %H:%M:%S"),
-         doy = as.numeric(format(dateTime, "%j")),
-         year = as.numeric(format(dateTime, "%Y")))
-
-#checking that everything is complete - 4 records didn't convert from dt1, not sure why.
-CIKdat %>% filter(is.na(doy))
-
 ```
 
 Sue archived historic Anchor River data on KNB. See Leslie's data cleaning notes, that should be combined with the site CIK14 with data from 2017 and 2018 that was brought in above.
@@ -60,9 +50,30 @@ Sue archived historic Anchor River data on KNB. See Leslie's data cleaning notes
 
 CIKknb <- read_csv(url("https://cn.dataone.org/cn/v2/resolve/urn:uuid:62f30fe8-25a3-42f6-ae23-ed0ae7a08f69", method = "libcurl"))
 
-CIKdat <- bind_rows(CIKdat, CIKknb %>% 
-                      filter(UseData == 1) %>% 
-                      select(-AKOATS_ID, -UseData))
+CIKknb <- CIKknb %>%
+  mutate(Site = "CIK14") %>%
+  filter(UseData == 1) %>%
+  select(-AKOATS_ID, -UseData)
+
+CIKdat <- bind_rows(CIKdat, CIKknb)
+```
+
+For plotting raw data, need dates and times in one field. Also add doy and year so that they can be used in figures.
+
+```{r}
+CIKdat$dt1 <- paste(CIKdat$sampleDate, CIKdat$sampleTime)
+
+CIKdat <- CIKdat %>% 
+  mutate(dateTime = as.POSIXct(dt1, format = "%Y-%m-%d %H:%M:%S"),
+         doy = as.numeric(format(dateTime, "%j")),
+         year = as.numeric(format(dateTime, "%Y")))
+
+#checking that everything is complete - 4 records didn't convert from dt1, not sure why.
+CIKdat %>% filter(is.na(doy))
+
+CIKdat <- CIKdat %>% 
+  filter(!is.na(doy))
+
 ```
 
 
@@ -101,9 +112,21 @@ APUdat <- APUdat %>%
 
 ```
 
+Check for any missing data, some missing temperature measurements (34) spread across sites that should be removed.
+
+```{r}
+apply(APUdat, 2, function(x) sum(is.na(x)))
+
+APUdat %>% filter(is.na(Temperature))
+
+APUdat <- APUdat %>% 
+  filter(!is.na(Temperature))
+```
+
+
 ## Kachemak Bay Research Reserve Data
 
-For KBERR, import the raw data. All of the raw data file names have been entered into a metadata worksheet where the file names match a KBERR site name, which matches a KBERR site name in Steve's shapefiles. For the raw data files, names them by their file name for now.
+For KBERR, import the raw data. All of the raw data file names have been entered into a metadata worksheet where the file names match a KBERR site name, which matches a KBERR site name in Steve's shapefiles. For the raw data files, named them by their file name for now.
 
 * For 2008, still need to rectify some of the locations for sites that got moved in May 2008 (or drop these files).  
 * We probably can't use 2011 data (but ask Steve) as these are sites from Michelle's study of coho overwintering and are mostly side channels. 
@@ -158,36 +181,44 @@ hws26 <- hws26 %>%
 dat08df <- bind_rows(dat08df, hws26)
 ```
 
-Missing data for SANC-1203-L and NINI-545-U because only loggers for those sites are in the top file. Add them in here because they are excel files, then fix dates and times.
+Top loggers that are being used to fill in missing data:
+
+* SANC-1203-L - HWS29, bottom logger lost.
+* NINI-545-U - HWS 28, bottom logger lost.
+* STAR-69 Lower, grabbing logger HWS10 from top folder for complete time series. 
+* NINI-545-M - HWS 27, bottom logger not found in august.
+* NINI-619-U - HWS 31, bottom logger had bad data.
+* SANC-1203-U - HWS 3 which died in May and HWS 18, which was used to replace HWS3. Bottom logger had bad data, but top logger data may have issues too based on Steve's notes.
+
+Add them in here because they are excel files, then fix dates and times.
+
+Files in top folder to be read in.
 
 ```{r}
 
-hws29 <- read_excel("Data/RAW Data/Anchor/KBERR/2008/Top/HWS029_20080806.xls", 
-                    skip = 3, col_names = c("sampleDate", "sampleTime", 
-                                            "Temperature"),
-                    col_types = c("date", "date", "numeric"))
+topFiles <- c("HWS029_20080806.xls", "HWS028_20080522.xls", "HWS028_20080807.xls", "HWS010_20080523.xls",
+              "HWS010_20080806.xls", "HWS031_20080603.xls", "HWS031_20080813.xls", "HWS003_20080602.xls",
+              "HWS018_20080806.xls")
+topFilescsv <- c("HWS027_20080516.csv", "HWS027_20080806_rss.csv")
 
-hws29 <- hws29 %>% 
-  mutate(Site = "2008/Top/HWS029_20080806.xls")
-
-dat08df <- bind_rows(dat08df, hws29)
+```
 
 
-hws28may <- read_excel("Data/RAW Data/Anchor/KBERR/2008/Top/HWS028_20080522.xls", 
-                    skip = 3, col_names = c("sampleDate", "sampleTime", 
-                                            "Temperature"),
-                    col_types = c("date", "date", "numeric")) %>%
-  mutate(Site = "2008/Top/HWS028_20080522.xls")
 
-dat08df <- bind_rows(dat08df, hws28may)
+```{r}
 
-hws28aug <- read_excel("Data/RAW Data/Anchor/KBERR/2008/Top/HWS028_20080807.xls", 
-                    skip = 3, col_names = c("sampleDate", "sampleTime", 
-                                            "Temperature"),
-                    col_types = c("date", "date", "numeric")) %>% 
-  mutate(Site = "2008/Top/HWS028_20080807.xls")
+toplist <- lapply(paste("Data/RAW Data/Anchor/KBERR/2008/Top/", topFiles, sep = ""), 
+                function(x) read_excel(x, skip = 3,
+                                       col_names = c("sampleDate",
+                                                     "sampleTime",
+                                                     "Temperature"),
+                                       col_types = c("date", "guess", "numeric")))
 
-dat08df <- bind_rows(dat08df, hws28aug)
+names(toplist) <- paste("2008/Top/", topFiles, sep = "")
+
+toplistdf <- bind_rows(toplist, .id = "Site") 
+
+dat08df <- bind_rows(dat08df, toplistdf)
 
 ```
 
@@ -197,7 +228,7 @@ Fix dates and times in excel files that have been used to create dat08df.
 #fix times in excel files that are now in dat08df
 dat08df <- dat08df %>% 
   mutate(testtz = as.POSIXct(format(sampleTime), tz = "America/Anchorage"),
-         sampleTime = as.hms(testtz),
+         sampleTime = as_hms(testtz),
          sampleDate = as.Date(sampleDate)) %>% 
   select(-testtz)
 ```
@@ -209,18 +240,21 @@ Read in set of csv files using read_csv, which does a much better job with dates
 dat08csv <- list.files("Data/RAW Data/Anchor/KBERR/2008/Bottom", full.names = TRUE,
                     recursive = TRUE, pattern = ".csv")
 
+dat08csv <- c(dat08csv, paste("Data/RAW Data/Anchor/KBERR/2008/Top/", topFilescsv, sep = ""))
+
 dat08csvlist <- lapply(dat08csv, 
                        function(x) read_csv(x, skip = 3,
                                             col_names = c("sampleDate",
                                                           "sampleTime",
-                                                          "Temperature"),
-                                            col_types = list(col_date(format = "%m/%d/%y"),
-                                                             col_time(),
-                                                             col_double())))
+                                                          "Temperature")))
 
 names(dat08csvlist) <- sub(".*KBERR/", "", dat08csv)
 
 dat08csvdf <- bind_rows(dat08csvlist, .id = "Site") 
+
+dat08csvdf <- dat08csvdf %>% 
+  mutate(sampleDate = case_when(nchar(sampleDate) == 8 ~ as.Date(sampleDate, format = "%m/%d/%y"),
+                                TRUE ~ as.Date(sampleDate, format = "%m/%d/%Y")))
 
 dat08 <- bind_rows(dat08df, dat08csvdf)
 
@@ -248,7 +282,6 @@ dat13df <- bind_rows(dat13list, .id = "Site")
 dat13df <- dat13df %>% 
   select(-delete1, -delete2)
 
-KBRdat <- bind_rows(dat08, dat13df)
 
 ```
 
@@ -280,13 +313,14 @@ dat17df <- dat17df %>%
          Temperature = (tempF - 32) * (5/9)) %>% 
   select(-datetime, -testtz, -tempF)
 
-KBRdat <- bind_rows(KBRdat, dat17df)
-
 ```
 
-Add in extra date fields for figures.
+Binding all data together to create KBRdat data frame.
+Also, adding in extra date fields for figures.
 
 ```{r}
+KBRdat <- bind_rows(dat08, dat13df)
+KBRdat <- bind_rows(KBRdat, dat17df)
 
 KBRdat$dt1 <- paste(KBRdat$sampleDate, KBRdat$sampleTime)
 
@@ -311,7 +345,7 @@ KBRdat <- KBRdat %>%
          shpName = `KBERR location name (SITE_ID2)`)
 ```
 
-Currently don't have lat/longs for one site that was imported because it had a logger in the bottom folder. There is another site (STAR-171-Middle - old) that has data in the top folder, but we don't have a lat/long for that site.
+Currently don't have lat/longs for one site that was imported because it had a logger in the bottom folder. There is another site (STAR-171-Middle - old) that has data in the top folder (so not in the KBRdat data frame), but we don't have a lat/long for that site so don't worry about importing for now.
 
 ```{r}
 KBRdat %>% filter(shpName == "?") %>% distinct(shpName, Site)
@@ -323,6 +357,21 @@ A total of 31 sites in the KBR dataset which matches the location table in the m
 KBRdat %>% distinct(shpName) %>% arrange(shpName) %>% print(n=40)
 ```
 
+Error trying to plot - see if there are some missing dates. Looks like there are 16 records where the conversion from date and time to posixct didn't work, drop them.
+
+```{r}
+apply(KBRdat, 2, function(x) sum(is.na(x)))
+
+KBRdat %>% filter(is.na(doy))
+
+KBRdat <- KBRdat %>% 
+  filter(!is.na(doy)) %>% 
+  ungroup()
+
+save(KBRdat, file = "output/KBRdat.Rdata")
+```
+
+
 ## KBERR comparison of top and bottom logger data
 
 Compare the differences between top and bottom loggers. If they are very different, we could be introducting some bias into the dataset. 
@@ -330,19 +379,19 @@ Compare the differences between top and bottom loggers. If they are very differe
 Grab the top loggers for NANC-44-U, and NINI-619-L to compare with bottom loggers already in the KBRdat file.
 
 ```{r}
-topFiles <- c("Data/RAW Data/Anchor/KBERR/2008/Top/HWS030_20080519.xls", 
+topFileTest <- c("Data/RAW Data/Anchor/KBERR/2008/Top/HWS030_20080519.xls", 
               "Data/RAW Data/Anchor/KBERR/2008/Top/HWS030_20080812.xls", 
               "Data/RAW Data/Anchor/KBERR/2008/Top/HWS023_20080609.xls", 
               "Data/RAW Data/Anchor/KBERR/2008/Top/HWS023_20080811.xls")
 
-topList <- lapply(topFiles, 
+topList <- lapply(topFileTest, 
                 function(x) read_excel(x, skip = 3,
                                        col_names = c("sampleDate",
                                                      "sampleTime",
                                                      "Temperature"),
                                        col_types = c("date", "guess", "numeric")))
 
-names(topList) <- sub(".*KBERR/", "", topFiles)
+names(topList) <- sub(".*KBERR/", "", topFileTest)
 
 topdf <- bind_rows(topList, .id = "Site") 
 

@@ -8,20 +8,21 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
+source("Temp_flags_function.R")
+
+library(rnoaa)
+library(plotly)
+library(readxl)
 library(tidyverse)
 ```
 
 # Anchor River Data
 
-## Flags
-
-It would be nice to create a function that generates all of the necessary flags for a time series.
-
 
 ## Get Homer air temperature for checking against datasets.
 
 ```{r}
-library(rnoaa)
+
 
 homer_air <- ghcnd_search(stationid = "USW00025507", date_min = "2010-01-01", 
                           date_max = "2019-08-31", var = "TAVG")
@@ -32,187 +33,308 @@ homer_air <- ghcnd_search(stationid = "USW00025507", date_min = "2010-01-01",
 
 ## Cook Inletkeeper
 
-Check for any temperatures greater then 20 and make sure they are part of a pattern.
+Start by plotting sites in CIK dataset separately.
 
 ```{r}
-gt20 <- CIKdat %>% 
-  group_by(Site, year, sampleDate) %>% 
-  summarize(mean = mean(Temperature)) %>% 
-  filter(mean > 20)
 
-CIKdat %>% 
-  group_by(Site, year, sampleDate) %>% 
-  summarize(mean = mean(Temperature)) %>% 
-  filter(Site == gt20$Site & year == gt20$year) %>% 
-  ggplot(aes(x = sampleDate, y = mean)) +
-  geom_line()
-```
-
-
-QA steps that can be automated include calculating daily ranges from raw data. High daily ranges can be reviewed as air temperatures. Really low daily temperatures could indicate burial, but could also indicate rain damping temperatures.
-
-```{r}
-CIKdat %>% 
-  group_by(Site, sampleDate) %>% 
-  summarize(dailyRange = max(Temperature) - min(Temperature)) %>% 
-  arrange(desc(dailyRange))
-
-
-  
-```
-
-Plot of daily ranges.
-
-```{r}
-CIKdat %>% 
-  group_by(Site, sampleDate, doy, year) %>% 
-  summarize(dailyRange = max(Temperature) - min(Temperature)) %>% 
-  ggplot(aes(x = doy, y = dailyRange, color = as.factor(year))) +
-  geom_line() +
-  facet_wrap(~Site, scale = "free_x")
-```
-
-
-```{r}
-CIKdat %>% 
-  ggplot(aes(x = doy, y = Temperature, color = as.factor(year))) +
- # geom_point() +
-  geom_line() +
-  facet_wrap(~Site, scale = "free_x")
-```
-
-plot of all CIK data.
-
-```{r}
 pdf("output/CIKdata.pdf", width = 11, height = 8.5)
-sites <- CIKdat %>% distinct(Site) %>% pull(Site)
-for(i in sites) {
+
+site.year <- CIKdat %>% distinct(Site, year)
+
+for(i in 1:37) {
   p <- CIKdat %>% 
-    filter(Site == i) %>% 
-    ggplot(aes(x = dateTime, y = Temperature, color = as.factor(year))) +
+    right_join(slice(site.year, i)) %>% 
+    ggplot(aes(x = dateTime, y = Temperature)) +
     geom_line() +
-    labs(title = i)
+    labs(title = paste0(slice(site.year, i), collapse = "_")) 
+    # facet_wrap(~year, scales = "free_x")
   print(p)
 }
 dev.off()
 
 ```
+
+Add temperature flags to data using temp_flags_function. Holding off on this for now because Sue gave us QAed data. Focus on APU and KBERR.
 
 
 ## APU Data
-APU data doesn't seem like it has been QAed. Lots of temps > 20 at HB3, another site that looks like it went awry in plot comparing sites below. Need to do some more QA on these sites, maybe try the NCEAS function.
-
-
-Check for any temperatures greater then 20 and make sure they are part of a pattern.
+APU data doesn't seem like it has been QAed. Plot of raw data shows that sites 3 and 9 have some air temperature spikes.
 
 ```{r}
-gt20 <- APUdat %>% 
-  group_by(Site, year, sampleDate) %>% 
-  summarize(mean = mean(Temperature)) %>% 
-  filter(mean > 20)
 
-APUdat %>% 
-  filter(Temperature > 20)
-
-
-```
-
-
-QA steps that can be automated include calculating daily ranges from raw data. High daily ranges can be reviewed as air temperatures. Really low daily temperatures could indicate burial, but could also indicate rain damping temperatures.
-
-```{r}
-APUdat %>% 
-  group_by(Site, sampleDate) %>% 
-  summarize(dailyRange = max(Temperature) - min(Temperature)) %>% 
-  filter(dailyRange > 10) %>% 
-  arrange(desc(dailyRange))
-```
-
-Plot of daily ranges.
-
-```{r}
-APUdat %>% 
-  group_by(Site, sampleDate, doy, year) %>% 
-  summarize(dailyRange = max(Temperature) - min(Temperature)) %>% 
-  ggplot(aes(x = doy, y = dailyRange, color = as.factor(year))) +
-  geom_line() +
-  facet_wrap(~Site)
-```
-
-Focus in on APU3 and APU9 when daily ranges spike.
-
-```{r}
-APUdat %>% 
-  group_by(Site, sampleDate, doy, year) %>% 
-  summarize(dailyRange = max(Temperature) - min(Temperature)) %>% 
-  filter(Site == "APU3") %>% 
-  ggplot(aes(x = doy, y = dailyRange, color = as.factor(year))) +
-  geom_line() 
-```
-
-
-
-```{r}
-APUdat %>% 
-  ggplot(aes(x = dateTime, y = Temperature)) +
- # geom_point() +
-  geom_line() +
-  facet_wrap(~Site)
-```
-
-Look at sites APU3 and APU9 more closely, both look like they are air temperatures.
-
-```{r}
-APUdat %>% 
-  filter(Site == "APU3" & sampleDate > "2015-06-01" & sampleDate < "2015-07-01") %>% 
-  ggplot(aes(x = dateTime, y = Temperature)) +
-  geom_line()
-```
-
-
-Can wrap into a pdf to get larger plots for examining bad data.
-
-```{r}
 pdf("output/APUdata.pdf", width = 11, height = 8.5)
-sites <- APUdat %>% distinct(Site) %>% pull(Site)
-for(i in sites) {
+
+APU_sites <- APUdat %>% distinct(Site) %>% pull(Site)
+
+for(i in APU_sites) {
   p <- APUdat %>% 
     filter(Site == i) %>% 
-    ggplot(aes(x = dateTime, y = Temperature, color = as.factor(year))) +
+    ggplot(aes(x = dateTime, y = Temperature)) +
     geom_line() +
-    labs(title = i) +
-    theme(legend.position = "bottom")
+    labs(title = i) 
+    # facet_wrap(~year, scales = "free_x")
   print(p)
+}
+
+p2 <- APUdat %>% 
+  ggplot(aes(x = dateTime, y = Temperature)) +
+  geom_line() +
+  facet_wrap(~Site)
+print(p2)
+
+dev.off()
+
+```
+
+
+Add temperature flags. Can group by site since all data are from 2015.
+
+```{r}
+APU_flagged <- APUdat %>% 
+  group_by(Site) %>% 
+  do(add_temp_flags(.))
+```
+
+Use flag plotting function to look at flags.
+
+```{r}
+pdf("output/APUdata_wFlags.pdf")
+
+for(i in APU_sites){
+  APU_flagged %>% 
+    filter(Site == i) %>% 
+    plot_flags(i)
 }
 dev.off()
 
 ```
+
+Plot Site 3 interactively to get dates with air temperatures. 
+
+```{r}
+p <- APU_flagged %>% 
+  filter(Site == "APU3") %>% 
+  ggplot(aes(x = dateTime, y = Temperature)) +
+  geom_line(aes(color = flag_hourlyChange)) 
+
+ggplotly(p) 
+```
+
+
+QA of flagged data:
+
+* The hourly change flag marked some temps in late May-early June, but that pattern matches other sites (increasing then decreasing). 
+* Don't use data from 6-15-2015 to 6-25-2015. Talked to Leslie and we agreed on removing this entire chunk.
+* Also a couple of spikes in early July that match other sites.
+
+```{r}
+APUdat <- APUdat %>% 
+  mutate(useData = ifelse((Site == "APU3" & sampleDate >= "2015-06-15" &
+                               sampleDate <= "2015-06-25"), 0, 1))
+```
+
+Plot Site 9 interactively to get dates with air temperatures. 
+
+```{r}
+p <- APU_flagged %>% 
+  filter(Site == "APU9") %>% 
+  ggplot(aes(x = dateTime, y = Temperature)) +
+  geom_line(aes(color = flag_hourlyChange)) 
+
+ggplotly(p) 
+```
+
+QA of flagged data:
+
+* remove 6-25-15, large anomolous spike on that date.
+* remove 8-7-15, large anomolous spike on that date.
+* remove 8-11 to 8-14-15.
+* remove 8-23 to 9-2-15, large spikes and drops interspersed throughout this period.
+
+```{r}
+APUdat <- APUdat %>% 
+  mutate(useData = case_when((Site == "APU9" & sampleDate == "2015-06-25") ~ 0,
+                             (Site == "APU9" & sampleDate == "2015-08-07") ~ 0,
+                             (Site == "APU9" & sampleDate >= "2015-08-11" &
+                                sampleDate <= "2015-08-14") ~ 0,
+                             (Site == "APU9" & sampleDate >= "2015-08-23" &
+                                sampleDate <= "2015-09-02") ~ 0,
+                             TRUE ~ useData))
+```
+
 
 ## KBERR Data
 
 Nothing has been cleaned on the KBERR datasets, lots of air temperature in the beginning and ending of data files. May be air spikes or burials in the datasets.
 
-```{r}
-KBRdat %>% 
-  ggplot(aes(x = doy, y = Temperature, color = as.factor(year))) +
-  geom_line() +
-  facet_wrap(~Site)
-```
-
-Can wrap into a pdf to get larger plots for examining bad data.
+Start by plotting all the data.
 
 ```{r}
+load(file = "output/KBRdat.Rdata")
+
 pdf("output/KBRdata.pdf", width = 11, height = 8.5)
-sites <- KBRdat %>% distinct(Site) %>% pull(Site)
-for(i in sites) {
+
+site.year <- KBRdat %>% distinct(Site, year)
+
+for(i in 1:53) {
   p <- KBRdat %>% 
-    filter(Site == i) %>% 
-    ggplot(aes(x = dateTime, y = Temperature, color = as.factor(year))) +
+    right_join(slice(site.year, i)) %>% 
+    ggplot(aes(x = dateTime, y = Temperature)) +
     geom_line() +
-    labs(title = i)
+    labs(title = paste0(slice(site.year, i), collapse = "_")) 
   print(p)
 }
 dev.off()
 
+
 ```
+
+Add temperature flags. Group by file so that each data group is continuous.
+
+```{r}
+KBRdat <- KBRdat %>% 
+  group_by(fileName) %>% 
+  do(add_temp_flags(.)) %>% 
+  ungroup()
+```
+
+Use flag plotting function to look at flags.
+
+```{r}
+pdf("output/KBRdata_wFlags.pdf")
+
+for(i in 1:53){
+  dat <- KBRdat %>% 
+    right_join(slice(site.year, i)) 
+  plotTitle <- paste0(slice(site.year, i), collapse = "_")
+  plot_flags(dat, plotTitle)
+}
+dev.off()
+
+```
+
+Plot sites interactively to get dates with air temperatures. Can probably plot by site only since plotly enables easy zooming. If there are lots of bad data for any sites from 2008, can import data from surface logger to see if it is better. 
+
+```{r}
+
+# plot_hourly_flag_interactively <- function(data, site) {
+#   p <- data %>% 
+#   filter(Site == site) %>% 
+#   ggplot(aes(x = dateTime, y = Temperature)) +
+#   geom_line(aes(linetype = as.factor(flag_hourlyChange), color = fileName)) +
+#   labs(title = site)
+#   ggplotly(p) 
+#   
+#   dat <- KBRdat %>% filter(Site == site)
+#   minDatetime <- dat %>% distinct(dateTime) %>% pull(dateTime) %>% min 
+#   maxDatetime <- dat %>% distinct(dateTime) %>% pull(dateTime) %>% max 
+#   allDate <- tibble(dateTime = seq.POSIXt(from = as.POSIXct(minDatetime), to = as.POSIXct(maxDatetime), by = 900))
+#   noflag <- left_join(allDate, dat %>% filter(flag_hourlyChange == 0) %>% select(dateTime, Temperature, fileName))
+#   yesflag <- left_join(allDate, dat %>% filter(flag_hourlyChange == 1) %>% select(dateTime, Temperature, fileName))
+#   p <- ggplot() +
+#     geom_line(data = noflag, aes(x = dateTime, y = Temperature, color = fileName), linetype = 1) +
+#     geom_line(data = yesflag, aes(x = dateTime, y = Temperature, color = fileName), linetype = 2) +
+#     labs(title = site)
+#   ggplotly(p)
+# }
+
+
+plot_hourly_flag_interactively <- function(data, site) {
+  p <- data %>%
+  filter(Site == site) %>%
+  ggplot(aes(x = dateTime, y = Temperature)) +
+  geom_line(aes(color = fileName)) +
+  labs(title = site)
+  ggplotly(p)
+}
+```
+
+Plot data interactively (below) and enter all the dates used for flagging bad data into Excel (much easier than typing in R). Deployment date for each file, retrieval data for each file, and air temperature dates.
+
+```{r}
+sites <- KBRdat %>% distinct(Site) %>% arrange(Site) %>% pull(Site)
+
+siteIn <- sites[21]
+print(siteIn)
+
+plot_hourly_flag_interactively(KBRdat, siteIn) 
+
+p <- ggplot() +
+  geom_line(data = KBRdat %>% filter(Site == "COTT-W"), aes(x = dateTime, y = Temperature, color = fileName)) +
+  geom_line(data = KBRdat %>% filter(Site == "COTT-C"), aes(x = dateTime, y = Temperature, color = fileName))
+
+ggplotly(p)
+
+```
+
+Create useData field and flag bad data as 0. 
+
+* temperatures < -1.
+* deployment date - all dates on or before this date are flagged for removal.
+* retrieval date - all dates on or after this date are flagged for removal.
+* air temperature date - all dates are flagged for removal.
+* remove duplicate loggers that are not needed.
+
+```{r}
+
+KBR_dates_for_flagging <- read_excel("Data/RAW Data/Anchor/KBERR/KBERR_QA_air_temps.xlsx", 
+                                     sheet = "air temperature dates", col_names = TRUE,
+                                     col_types = c("text", "text", "date"))
+
+
+KBRdat <- KBRdat %>% 
+  mutate(useData = ifelse(Temperature < -1, 0, 1))
+
+for (i in 1:dim(KBR_dates_for_flagging)[1]) {
+  flag <- slice(KBR_dates_for_flagging, i)
+  KBRdat <- KBRdat %>% 
+    mutate(useData = case_when(Site == flag$Site & flag$flag_type == "deployment" & 
+                                 sampleDate <= flag$flag_date ~ 0,
+                               Site == flag$Site & flag$flag_type == "retrieval" & 
+                                 sampleDate >= flag$flag_date ~ 0,
+                               Site == flag$Site & flag$flag_type == "air temperature" & 
+                                 sampleDate == flag$flag_date ~ 0,
+                               TRUE ~ useData))
+}
+
+```
+
+Remove duplicate loggers.
+
+```{r}
+KBR_remove_dups <- read_excel("Data/RAW Data/Anchor/KBERR/KBERR_QA_air_temps.xlsx", 
+                                     sheet = "duplicate loggers", col_names = TRUE)
+
+KBRdat <- KBRdat %>% 
+  filter(!fileName %in% (KBR_remove_dups %>% pull(fileName)))
+
+```
+
+Replot all sites and make sure that air temperatures are now removed.
+
+Looked at this plot and found a bit more data Qa to do, notes are in the air temps workbook, 9/20/19.
+
+```{r}
+
+pdf("output/KBRdata_postQA.pdf", width = 11, height = 8.5)
+for(i in sites) {
+  p <- KBRdat %>% 
+    filter(useData == 1, Site == i) %>% 
+    ggplot(aes(x = dateTime, y = Temperature)) +
+    geom_line(aes(color = fileName)) +
+    labs(title = i) 
+  print(p)
+}
+dev.off()
+
+
+```
+
+
+
+
+
+
+
+
 

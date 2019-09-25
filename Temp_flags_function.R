@@ -63,29 +63,30 @@ add_temp_flags <- function(data) {
     flag_daily_change()
 } 
 
-plot_flags <- function(data) {
+plot_flags <- function(data, subtitle) {
   p1 <- data %>%
     ggplot(aes(x = dateTime, y = Temperature)) +
     geom_line(aes(color = flag_highTemps)) + 
-    theme(legend.position = "bottom") +
-    labs(title = "Temperature measurements > 25 C")
+    theme(legend.position = "none") +
+    labs(title = "Temperature measurements > 25 C",
+         subtitle = subtitle)
   
   p2 <- data %>% 
     ggplot(aes(x = dateTime, y = Temperature)) +
     geom_line(aes(color = flag_lowTemps)) + 
-    theme(legend.position = "bottom") +
+    theme(legend.position = "none") +
     labs(title = "Temperature measurements < -1 C")
   
   p3 <- data %>% 
     ggplot(aes(x = dateTime, y = Temperature)) +
     geom_line(aes(color = flag_hourlyChange)) + 
-    theme(legend.position = "bottom") +
+    theme(legend.position = "none") +
     labs(title = "Rate of change in hourly mean temps. > 3 C")
   
   p4 <- data %>% 
     ggplot(aes(x = dateTime, y = Temperature)) +
     geom_line(aes(color = flag_dailyChange)) + 
-    theme(legend.position = "bottom") +
+    theme(legend.position = "none") +
     labs(title = "Rate of change in daily mean temps. > 3 C")
   
   grid.arrange(p1, p2, p3, p4, nrow = 2)
@@ -94,19 +95,19 @@ plot_flags <- function(data) {
 
 
 
-APUdat %>% 
-  filter(Site == "APU9") %>% 
-  add_temp_flags() %>% 
-  plot_flags()
-
-APUdat %>% 
-  filter(Site == "APU9") %>% 
-  add_temp_flags() %>% 
-  filter(sampleDate > "2015-08-01",
-         sampleDate < "2015-09-15") %>% 
-  ggplot(aes(x = dateTime, y = Temperature)) +
-  geom_line(aes(color = flag_hourlyChange)) + 
-  theme(legend.position = "bottom") 
+# APUdat %>% 
+#   filter(Site == "APU9") %>% 
+#   add_temp_flags() %>% 
+#   plot_flags()
+# 
+# APUdat %>% 
+#   filter(Site == "APU9") %>% 
+#   add_temp_flags() %>% 
+#   filter(sampleDate > "2015-08-01",
+#          sampleDate < "2015-09-15") %>% 
+#   ggplot(aes(x = dateTime, y = Temperature)) +
+#   geom_line(aes(color = flag_hourlyChange)) + 
+#   theme(legend.position = "bottom") 
 
 #data arguments don't take a default, but detail args do.
 #... ellipsis allows passing argument to other functions.
