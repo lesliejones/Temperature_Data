@@ -373,7 +373,7 @@ save(KBRdat, file = "output/KBRdat.Rdata")
 ```
 
 
-## KBERR comparison of top and bottom logger data
+### KBERR comparison of top and bottom logger data
 
 Compare the differences between top and bottom loggers. If they are very different, we could be introducting some bias into the dataset. 
 

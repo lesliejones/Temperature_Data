@@ -58,7 +58,7 @@ Add temperature flags to data using temp_flags_function. Holding off on this for
 
 
 ## APU Data
-APU data doesn't seem like it has been QAed. Plot of raw data shows that sites 3 and 9 have some air temperature spikes.
+APU data doesn't seem like it has been completely QAed. Plot of raw data shows that sites 3 and 9 have some air temperature spikes.
 
 ```{r}
 
@@ -160,6 +160,31 @@ APUdat <- APUdat %>%
                              (Site == "APU9" & sampleDate >= "2015-08-23" &
                                 sampleDate <= "2015-09-02") ~ 0,
                              TRUE ~ useData))
+```
+
+Replot QAed data as a check.
+
+```{r}
+
+pdf("output/APUdata_postQA.pdf", width = 11, height = 8.5)
+for(i in APU_sites) {
+  p <- APUdat %>% 
+    filter(Site == i, useData == 1) %>% 
+    ggplot(aes(x = dateTime, y = Temperature)) +
+    geom_line() +
+    labs(title = i) 
+    # facet_wrap(~year, scales = "free_x")
+  print(p)
+}
+
+p2 <- APUdat %>% 
+  filter(useData == 1) %>% 
+  ggplot(aes(x = dateTime, y = Temperature)) +
+  geom_line() +
+  facet_wrap(~Site)
+print(p2)
+
+dev.off()
 ```
 
 
@@ -342,4 +367,55 @@ KBRdat %>% filter(useData == 1) %>%
 
 
 
+
+
+## Save QAed data for import into database
+
+Tried combining all three Anchor datasets and importing to mysql database, but timeout error. Instead, add locationid to each file separately, save as a data file and import.
+
+
+```{r}
+
+db_locTbl <- read_csv("D:/AKNHP/Temperature_Data/Database/Import files/location.csv")
+
+CIKdat %>%
+  mutate(useData = 1) %>% 
+  left_join(db_locTbl %>% select(ACCS_siteid, loc_id), by = c("Site" = "ACCS_siteid"))  %>%
+  select(date = sampleDate,
+         time = sampleTime,
+         temperature = Temperature,
+         use_data = useData,
+         loc_id) %>% 
+  write.csv(., file = "D:/AKNHP/Temperature_Data/Database/Import files/cik_anchor_data.csv")
+  
+APUdat %>%
+  left_join(db_locTbl %>% select(ACCS_siteid, loc_id), by = c("Site" = "ACCS_siteid"))  %>%
+  select(date = sampleDate,
+         time = sampleTime,
+         temperature = Temperature,
+         use_data = useData,
+         loc_id) %>% 
+  write.csv(., file = "D:/AKNHP/Temperature_Data/Database/Import files/apu_anchor_data.csv")
+
+KBRdat %>%
+  distinct(Site) %>% 
+  left_join(db_locTbl %>% select(contact_siteid, loc_id), by = c("Site" = "contact_siteid"))  %>%
+  select(date = sampleDate,
+         time = sampleTime,
+         temperature = Temperature,
+         use_data = useData,
+         loc_id) %>% 
+  write.csv(., file = "D:/AKNHP/Temperature_Data/Database/Import files/apu_anchor_data.csv")
+
+
+
+
+```
+
+Add correct location id from location table in database.
+
+```{r}
+
+
+```
 
