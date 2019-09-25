@@ -254,7 +254,7 @@ Plot data interactively (below) and enter all the dates used for flagging bad da
 ```{r}
 sites <- KBRdat %>% distinct(Site) %>% arrange(Site) %>% pull(Site)
 
-siteIn <- sites[21]
+siteIn <- sites[11]
 print(siteIn)
 
 plot_hourly_flag_interactively(KBRdat, siteIn) 
@@ -311,8 +311,7 @@ KBRdat <- KBRdat %>%
 ```
 
 Replot all sites and make sure that air temperatures are now removed.
-
-Looked at this plot and found a bit more data Qa to do, notes are in the air temps workbook, 9/20/19.
+Everything looks good (9/25/19)
 
 ```{r}
 
@@ -330,6 +329,12 @@ dev.off()
 
 ```
 
+Since combining loggers, check that there are no duplicate data that I didn't catch. All clear!
+
+```{r}
+KBRdat %>% filter(useData == 1) %>% 
+  distinct(Site, fileName, sampleDate) %>% count(Site, sampleDate) %>% filter(n > 1)
+```
 
 
 

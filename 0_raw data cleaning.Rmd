@@ -253,8 +253,9 @@ names(dat08csvlist) <- sub(".*KBERR/", "", dat08csv)
 dat08csvdf <- bind_rows(dat08csvlist, .id = "Site") 
 
 dat08csvdf <- dat08csvdf %>% 
-  mutate(sampleDate = case_when(nchar(sampleDate) == 8 ~ as.Date(sampleDate, format = "%m/%d/%y"),
-                                TRUE ~ as.Date(sampleDate, format = "%m/%d/%Y")))
+  mutate(sampleDate = case_when(Site == "2008/Top/HWS027_20080806_rss.csv" ~ 
+                                  as.Date(sampleDate, format = "%m/%d/%Y"),
+                                TRUE ~ as.Date(sampleDate, format = "%m/%d/%y")))
 
 dat08 <- bind_rows(dat08df, dat08csvdf)
 
