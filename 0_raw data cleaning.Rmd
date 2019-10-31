@@ -123,6 +123,14 @@ APUdat <- APUdat %>%
   filter(!is.na(Temperature))
 ```
 
+Check that we have correct locations for all sites. Decided to drop Data logger 10 (APU13) per email from John Hagan that says it was a seep.
+
+```{r}
+APUdat <- APUdat %>% 
+  filter(!Site == "APU13")
+```
+
+
 
 ## Kachemak Bay Research Reserve Data
 

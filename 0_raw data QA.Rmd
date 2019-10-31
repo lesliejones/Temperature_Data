@@ -188,6 +188,8 @@ dev.off()
 ```
 
 
+
+
 ## KBERR Data
 
 Nothing has been cleaned on the KBERR datasets, lots of air temperature in the beginning and ending of data files. May be air spikes or burials in the datasets.
@@ -385,10 +387,11 @@ CIKdat %>%
          time = sampleTime,
          temperature = Temperature,
          use_data = useData,
-         loc_id) %>% 
+         location_id = loc_id) %>% 
   write.csv(., file = "D:/AKNHP/Temperature_Data/Database/Import files/cik_anchor_data.csv")
   
 APUdat %>%
+  filter(useData == 1) %>% 
   left_join(db_locTbl %>% select(ACCS_siteid, loc_id), by = c("Site" = "ACCS_siteid"))  %>%
   select(date = sampleDate,
          time = sampleTime,
@@ -398,23 +401,16 @@ APUdat %>%
   write.csv(., file = "D:/AKNHP/Temperature_Data/Database/Import files/apu_anchor_data.csv")
 
 KBRdat %>%
-  distinct(Site) %>% 
+  filter(useData == 1) %>% 
   left_join(db_locTbl %>% select(contact_siteid, loc_id), by = c("Site" = "contact_siteid"))  %>%
   select(date = sampleDate,
          time = sampleTime,
          temperature = Temperature,
          use_data = useData,
          loc_id) %>% 
-  write.csv(., file = "D:/AKNHP/Temperature_Data/Database/Import files/apu_anchor_data.csv")
+  write.csv(., file = "D:/AKNHP/Temperature_Data/Database/Import files/kbr_anchor_data.csv")
 
 
-
-
-```
-
-Add correct location id from location table in database.
-
-```{r}
 
 
 ```
