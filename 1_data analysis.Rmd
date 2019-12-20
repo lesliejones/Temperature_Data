@@ -1,0 +1,214 @@
+---
+title: "1_data analysis"
+author: "Becky"
+date: "10/31/2019"
+output: html_document
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
+
+library(lubridate)
+library(rgdal)
+library(tidyverse)
+# library(zoo)
+library(caTools)
+```
+
+Fixes:
+- dates are filled in using complete so ok.
+- ma only calculating when all 8 days are present, maybe go down to 5 or 6?
+
+# Anchor Data
+
+## 8-day moving average of stream temperature data
+
+Moving average function in CAtools which will remove NAs. We can now calculate a running mean independent of the number of data points available in each window (e.g. 8). Separately, calculate the number of non NA values in each window by replacing all non-NA values with 1 and filter on those running means with counts < 5.
+
+
+Load data files from previously that only have useData == 1. 
+Bind all the of data together first before calculating running means. Calculate mean daily temperatures.
+
+```{r}
+
+load("output/CIKdat_postQA.Rdata")
+load("output/APUdat_postQA.Rdata")
+load("output/KBRdat_postQA.Rdata")
+
+temp <- as_tibble()
+
+temp <- bind_rows(temp, CIKdatFinal) 
+temp <- bind_rows(temp, KBRdatFinal) 
+temp <- bind_rows(temp, APUdatFinal) 
+
+#No NAs in temperature field so ok for calculating daily means
+temp <- temp %>%
+  group_by(Site, sampleDate) %>% 
+  summarize(meanT = mean(Temperature)) 
+
+
+```
+
+
+Use complete to fill in missing dates for all sites so that moving average is only calculating when the 8 days prior actually have data. (i.e. not going from October 2004 to April 2005).
+Calculate a moving average that takes the 7 days prior and day itself and calculates a mean and removes any missing values (NAs). Add a new field that is 0 when mean temp is NA and 1 when we have a measurement. Do a rolling sum on that field over the same window so we know how many measurements were used in the rolling mean. Only keep moving averages that were calculated from 5 or more measurements! DONE!
+
+```{r}
+
+all.dates <- tibble(sampleDate = seq.Date(from = min(temp$sampleDate), 
+                                          to = max(temp$sampleDate), by = 1)) 
+
+temp_8day <- temp %>%
+  complete(Site, all.dates) %>% 
+  arrange(Site, sampleDate) %>% 
+  #add a field that can be used to count non-NA values
+  mutate(meanNotNA = case_when(is.na(meanT) ~ 0,
+                               TRUE ~ 1)) %>% 
+  group_by(Site) %>% 
+  mutate(ma_mean = rollapply(meanT, width = 8, align = "right", 
+                             FUN = function(x) mean(x, na.rm = TRUE), fill = NA),
+         ma_sum = rollapply(meanNotNA, width = 8, align = "right", 
+                            FUN = sum, fill = NA)) %>% 
+  filter(!ma_sum < 5)
+
+```
+
+
+
+## Merge RCA ids to stream temperature data frame
+
+First .csv file has the temperature site information (ACCS site id) along with the RCA site ids. It also has the mean, min, and max elevation for that RCA. These RCA site ids can be used to filter the climate data actually needed for modeling.
+
+Note: the original accs_siteids applied to the KBR data weren't brought in because I had to go back to the raw data to figure out what was going on (site locations). So, create a join field that includes the contact_siteid for the KBR sites only. (contact id 2)
+
+Also note: Some of the KBR data was not in the Anchor River watershed so they won't have rca_ids. Probably the easiest wya to remove these will be when merges are made in the data analysis report (e.g. !is.na(rca_id).
+
+```{r}
+
+rca_join <- read_csv("Data/Spatial_data/Anchor/tempsites_rcas.csv")
+
+rca_join <- rca_join %>% 
+  mutate(Site_join = case_when(contact_id == 2 ~ contact_siteid,
+                               contact_id != 2 ~ accs_siteid))
+
+```
+
+Join RCA IDs to the stream temperature data frame. Remove the data for the KBR sites from the Deep and Ninikchik watersheds.
+
+```{r}
+
+temp.rca <- rca_join %>% 
+  select(Site_join, rca_id, elev_mean, elev_min, elev_max) %>% 
+  left_join(temp, by = c("Site_join" = "Site")) %>% 
+  rename(Site = Site_join)
+  
+temp.rca %>% distinct(Site, rca_id)
+
+temp.rca <- temp.rca %>% 
+  filter(!is.na(rca_id))
+
+  
+```
+
+
+CURRENTLY NOT USING.
+Read in elevation and slope covariates associated with the reaches within each RCA.
+
+```{r}
+
+rch_cov <- read_csv("Data/Spatial_data/Anchor/anch_rcas_reaches.csv")
+
+```
+
+
+## Merge daymet data to stream temperature data frame
+
+Read in climate covariates stored in file geodatabases that were calculated for the RCAs. These are tables that have climate information linked to the RCAs.
+
+Start with the daymet data: air, precipitation, and SWE. Leslie clarified what the date represents for DAYMET in an email on 10/18/19: "For the daymet data the date represents the mid-point of the 8-day series. For May 1st - average is 4 days prior and 3 days after."
+
+```{r}
+
+fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_DAYMET.gdb"
+
+# List all feature classes in a file geodatabase
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+
+# Read the feature class
+daymet <- sf::st_read(dsn = fgdb, layer = "anchor_daymet")
+
+daymet <- daymet %>% 
+  mutate(date = as.Date(date)) %>% 
+  select(-Field1)
+
+daymet %>% 
+  group_by(year(date)) %>% 
+  summarize(min(date), max(date))
+
+```
+
+
+Merge the daymet data (i.e. air temp, swe, and precip covariates) to the stream temperature data frame so that only rca_ids and dates in the stream temperature data frame for which we have empirical data are kept. For now, remove daymet so it doesn't bog down the system (though we will need it later for prediction). 
+
+Note: moving average of stream temperatures is currently indexed by last day of 8 day window. Since daymet is 5th day of 8-day window, need to subtract 3 days from julian date in the temp.rca data frame for merging.
+
+Call this data frame temp.dm since it will be our model using the daymet air temperatures. (next model can be temp.lst.)
+
+```{r}
+
+temp.dm <- temp.rca %>% 
+  mutate(date_day5 = sampleDate - 3) %>% 
+  left_join(daymet, by = c("rca_id" = "rca_id", "date_day5" = "date")) 
+
+rm(daymet)
+```
+
+Figure out pattern in missing data.
+
+```{r}
+temp.dm %>% 
+  filter(is.na(tair)) %>% 
+  distinct(month(date_day5))
+```
+
+
+
+Explore relationships.
+
+```{r}
+
+temp.dm %>% 
+  filter(!is.na(ma_8d)) %>% 
+  ggplot(aes(x = ma_8d, y = tair, color = as.factor(month(sampleDate)))) +
+  geom_point() +
+  geom_smooth()
+  facet_wrap(~Site) 
+
+```
+
+
+
+## LST
+
+Read in LST data.
+
+```{r}
+fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_LST.gdb"
+
+# List all feature classes in a file geodatabase
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+
+# Read the feature class
+lst <- sf::st_read(dsn = fgdb, layer = "LST_anchor_all")
+
+
+
+```
+
+

@@ -54,11 +54,11 @@ CREATE TABLE waterbody (
 
 #run
 CREATE TABLE data (
-  dat_id INT NOT NULL,
-  PRIMARY KEY (dat_id),
+  dat_id INT PRIMARY KEY AUTO_INCREMENT,
   date DATE NOT NULL,
   time TIME NOT NULL,
   temperature DECIMAL(5,2) NOT NULL,
+  use_data TINYINT NOT NULL,
   location_id INT NOT NULL
 );
 

@@ -15,9 +15,11 @@ library(tidyverse)
 
 ```
 
-# Read in all Anchor Data
+# Temperature data
 
-## Cook Inletkeeper data for Anchor
+## Anchor River
+
+### Cook Inletkeeper data for Anchor
 
 First start with Sue's data from CIK. All data are in C and dates and times read in fine. Put into a list and name each tibble in the list with the site name only (get rid of the years).
 
@@ -68,7 +70,12 @@ CIKdat <- CIKdat %>%
          doy = as.numeric(format(dateTime, "%j")),
          year = as.numeric(format(dateTime, "%Y")))
 
-#checking that everything is complete - 4 records didn't convert from dt1, not sure why.
+```
+
+Checking that everything is complete - 4 records didn't convert from dt1 because of daylight savings.
+
+```{r}
+
 CIKdat %>% filter(is.na(doy))
 
 CIKdat <- CIKdat %>% 
@@ -76,8 +83,16 @@ CIKdat <- CIKdat %>%
 
 ```
 
+Save as an Rdata file to be imported into downstream Rmarkdown documents.
 
-## APU data for Anchor
+```{r}
+save(CIKdat, file = "output/CIKdat.Rdata")
+
+```
+
+
+
+### APU data for Anchor
 
 Same steps as above, read all files into a list and then combine into a data frame.
 
@@ -123,16 +138,22 @@ APUdat <- APUdat %>%
   filter(!is.na(Temperature))
 ```
 
-Check that we have correct locations for all sites. Decided to drop Data logger 10 (APU13) per email from John Hagan that says it was a seep.
+Check that we have correct locations for all sites. Decided to drop Data logger 10 (APU13) per email from John Hagan that says it was a seep. Also manually corrected lat long for data logger 8 in the location csv that I imported to the datbase. APU now has 12 sites in the database.
 
 ```{r}
 APUdat <- APUdat %>% 
   filter(!Site == "APU13")
 ```
+Save data for downstream QA rmarkdown document.
+
+```{r}
+save(APUdat, file = "output/APUdat.Rdata")
+
+```
 
 
 
-## Kachemak Bay Research Reserve Data
+### Kachemak Bay Research Reserve Data
 
 For KBERR, import the raw data. All of the raw data file names have been entered into a metadata worksheet where the file names match a KBERR site name, which matches a KBERR site name in Steve's shapefiles. For the raw data files, named them by their file name for now.
 
@@ -209,11 +230,6 @@ topFiles <- c("HWS029_20080806.xls", "HWS028_20080522.xls", "HWS028_20080807.xls
               "HWS018_20080806.xls")
 topFilescsv <- c("HWS027_20080516.csv", "HWS027_20080806_rss.csv")
 
-```
-
-
-
-```{r}
 
 toplist <- lapply(paste("Data/RAW Data/Anchor/KBERR/2008/Top/", topFiles, sep = ""), 
                 function(x) read_excel(x, skip = 3,
@@ -317,7 +333,7 @@ dat17df <- bind_rows(dat17list, .id = "Site")
 
 dat17df <- dat17df %>% 
   mutate(testtz = as.POSIXct(format(datetime), tz = "America/Anchorage"),
-         sampleTime = as.hms(testtz),
+         sampleTime = as_hms(testtz),
          sampleDate = as.Date(datetime),
          Temperature = (tempF - 32) * (5/9)) %>% 
   select(-datetime, -testtz, -tempF)
@@ -358,6 +374,10 @@ Currently don't have lat/longs for one site that was imported because it had a l
 
 ```{r}
 KBRdat %>% filter(shpName == "?") %>% distinct(shpName, Site)
+
+KBRdat <- KBRdat %>% 
+  filter(!shpName == "?")
+
 ```
 
 A total of 31 sites in the KBR dataset which matches the location table in the mysql database.
@@ -366,7 +386,7 @@ A total of 31 sites in the KBR dataset which matches the location table in the m
 KBRdat %>% distinct(shpName) %>% arrange(shpName) %>% print(n=40)
 ```
 
-Error trying to plot - see if there are some missing dates. Looks like there are 16 records where the conversion from date and time to posixct didn't work, drop them.
+Error trying to plot - see if there are some missing dates. Looks like there are 16 records where the conversion from date and time to posixoct didn't work, drop them. (from daylights savings)
 
 ```{r}
 apply(KBRdat, 2, function(x) sum(is.na(x)))
@@ -479,6 +499,15 @@ left_join(KBRdat %>%
             summarize(meanTopTemp = mean(Temperature))) %>% 
   mutate(diffMeanDailyTemp = meanTemp - meanTopTemp)
 ```
+
+
+
+
+
+
+
+
+
 
 
 

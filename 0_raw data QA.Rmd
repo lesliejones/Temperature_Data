@@ -23,9 +23,9 @@ library(tidyverse)
 
 ```{r}
 
-
-homer_air <- ghcnd_search(stationid = "USW00025507", date_min = "2010-01-01", 
-                          date_max = "2019-08-31", var = "TAVG")
+# 
+# homer_air <- ghcnd_search(stationid = "USW00025507", date_min = "2010-01-01", 
+#                           date_max = "2019-08-31", var = "TAVG")
 
 
 ```
@@ -54,7 +54,50 @@ dev.off()
 
 ```
 
-Add temperature flags to data using temp_flags_function. Holding off on this for now because Sue gave us QAed data. Focus on APU and KBERR.
+Add temperature flags to data using temp_flags_function. Holding off on this for now because Sue gave us QAed data. 
+
+Check for duplicate values by site and date-time.
+
+```{r}
+cik.dups <- CIKdat %>% 
+  count(Site, dateTime) %>% 
+  filter(n > 1)
+
+CIKdat %>% 
+  right_join(cik.dups) 
+  
+```
+No really big differences, maybe two loggers, or second set of readings during daylight savings fall back at 1 am. Just take the average.
+
+```{r}
+CIKdat <- CIKdat %>% 
+  group_by(Site, sampleDate, sampleTime, dateTime, doy, year) %>% 
+  summarize(Temperature = mean(Temperature))
+```
+
+Check for 90% of measurements within each day. All of Sue's data are 15 minutes, so should be 96 measurements in a day.
+
+```{r}
+cik.rm.days <- CIKdat %>% 
+  group_by(Site, sampleDate) %>% 
+  summarize(dayCt = n()) %>% 
+  filter(dayCt < 86)
+```
+
+Remove days with less than 90% of measurements (< 86) and save as qaed final for downstream analysis Rmarkdown documents.
+
+```{r}
+CIKdat <- CIKdat %>% 
+  left_join(cik.rm.days) %>% 
+  filter(is.na(dayCt))
+
+CIKdatFinal <- CIKdat %>% 
+  select(-dayCt)
+
+save(CIKdatFinal, file = "output/CIKdat_postQA.Rdata")
+
+```
+
 
 
 ## APU Data
@@ -187,7 +230,50 @@ print(p2)
 dev.off()
 ```
 
+Check for duplicates.
 
+```{r}
+APUdat %>% 
+  count(Site, dateTime) %>% 
+  filter(n > 1)
+```
+
+Check for 90% of measurements on each day. Note that APU1, APU2, and APU3 were hourly, all others were 30 minutes.
+
+```{r}
+APUdat %>%
+  count(Site, sampleDate) %>% 
+  arrange(Site, n) %>% 
+  filter(!n %in% c(24, 48))
+  
+```
+
+Remove days with less than 90% of data. (<20 for APU1, APU2, or APU3; <43 for all others). .
+
+```{r}
+
+apu.rm.days <- APUdat %>% 
+  count(Site, sampleDate) %>%
+  arrange(Site, n) %>% 
+  filter(!(Site %in% c("APU1", "APU2", "APU3") & n == 24)) %>% 
+  filter(n < 43)
+
+```
+
+Remove days with less than 90% of measurements and save as qaed final for downstream analysis Rmarkdown documents. Save good data (useData == 1) as an Rdata file to be imported into downstream analysis Rmarkdown documents.
+
+
+```{r}
+
+APUdat <- APUdat %>% 
+  left_join(apu.rm.days) %>% 
+  filter(is.na(n))
+
+APUdatFinal <- APUdat %>% filter(useData == 1)
+
+save(APUdatFinal, file = "output/APUdat_postQA.Rdata")
+
+```
 
 
 ## KBERR Data
@@ -341,6 +427,8 @@ Replot all sites and make sure that air temperatures are now removed.
 Everything looks good (9/25/19)
 
 ```{r}
+sites <- KBRdat %>% distinct(Site) %>% arrange(Site) %>% pull(Site)
+
 
 pdf("output/KBRdata_postQA.pdf", width = 11, height = 8.5)
 for(i in sites) {
@@ -356,17 +444,67 @@ dev.off()
 
 ```
 
-Since combining loggers, check that there are no duplicate data that I didn't catch. All clear!
+
+Check for duplicates.
 
 ```{r}
-KBRdat %>% filter(useData == 1) %>% 
-  distinct(Site, fileName, sampleDate) %>% count(Site, sampleDate) %>% filter(n > 1)
+kbr.dups <- KBRdat %>% 
+  filter(useData == 1) %>% 
+  count(Site, dateTime) %>% 
+  filter(n > 1)
+```
+
+Where are these duplicate date coming from? Daylight savings in fall when clocks go back one hour causes duplicate readings from 1 -2 am. Just take average like we did for CIK data.
+
+```{r}
+KBRdat %>% 
+  right_join(kbr.dups)
+
+KBRdat <- KBRdat %>% 
+  group_by(Site, sampleDate, sampleTime, dateTime, doy, year, useData) %>% 
+  summarize(Temperature = mean(Temperature))
 ```
 
 
+Check for 90% of measurements on each day. Mostly 15 minute data?
+
+```{r}
+KBRdat %>%
+  ungroup() %>% 
+  count(Site, sampleDate) %>% 
+  arrange(Site, n) %>%
+  filter(n < 86)
+
+```
+
+Remove days with less than 90% of data. It looks like all KBR data is 15 minute, so less than 86.
+
+```{r}
+
+kbr.rm.days <- KBRdat %>% 
+  ungroup() %>% 
+  count(Site, sampleDate) %>%
+  arrange(Site, n) %>% 
+  filter(n < 86)
+
+```
+
+Remove days with less than 90% of measurements and save as qaed final for downstream analysis Rmarkdown documents. Save good data (useData == 1) as an Rdata file to be imported into downstream analysis Rmarkdown documents.
 
 
+```{r}
 
+KBRdat <- KBRdat %>% 
+  left_join(kbr.rm.days) %>% 
+  filter(is.na(n))
+
+KBRdatFinal <- KBRdat %>% 
+  filter(useData == 1) %>% 
+  select(-n)
+
+save(KBRdatFinal, file = "output/KBRdat_postQA.Rdata")
+
+```
 
 
 
@@ -377,40 +515,43 @@ Tried combining all three Anchor datasets and importing to mysql database, but t
 
 
 ```{r}
-
-db_locTbl <- read_csv("D:/AKNHP/Temperature_Data/Database/Import files/location.csv")
-
-CIKdat %>%
-  mutate(useData = 1) %>% 
-  left_join(db_locTbl %>% select(ACCS_siteid, loc_id), by = c("Site" = "ACCS_siteid"))  %>%
-  select(date = sampleDate,
-         time = sampleTime,
-         temperature = Temperature,
-         use_data = useData,
-         location_id = loc_id) %>% 
-  write.csv(., file = "D:/AKNHP/Temperature_Data/Database/Import files/cik_anchor_data.csv")
-  
-APUdat %>%
-  filter(useData == 1) %>% 
-  left_join(db_locTbl %>% select(ACCS_siteid, loc_id), by = c("Site" = "ACCS_siteid"))  %>%
-  select(date = sampleDate,
-         time = sampleTime,
-         temperature = Temperature,
-         use_data = useData,
-         loc_id) %>% 
-  write.csv(., file = "D:/AKNHP/Temperature_Data/Database/Import files/apu_anchor_data.csv")
-
-KBRdat %>%
-  filter(useData == 1) %>% 
-  left_join(db_locTbl %>% select(contact_siteid, loc_id), by = c("Site" = "contact_siteid"))  %>%
-  select(date = sampleDate,
-         time = sampleTime,
-         temperature = Temperature,
-         use_data = useData,
-         loc_id) %>% 
-  write.csv(., file = "D:/AKNHP/Temperature_Data/Database/Import files/kbr_anchor_data.csv")
-
-
+# 
+# db_locTbl <- read_csv("D:/AKNHP/Temperature_Data/Database/Import files/location.csv")
+# 
+# CIKtbl <- CIKdat %>%
+#   mutate(useData = 1) %>% 
+#   left_join(db_locTbl %>% select(accs_siteid, loc_id), by = c("Site" = "accs_siteid"))  %>%
+#   select(date = sampleDate,
+#          time = sampleTime,
+#          temperature = Temperature,
+#          use_data = useData,
+#          location_id = loc_id) 
+# CIKtbl %>% 
+#   write.csv(., file = "D:/AKNHP/Temperature_Data/Database/Import files/cik_anchor_data.csv")
+#   
+# APUtbl <- APUdat %>%
+#   filter(useData == 1) %>% 
+#   left_join(db_locTbl %>% select(accs_siteid, loc_id), by = c("Site" = "accs_siteid"))  %>%
+#   select(date = sampleDate,
+#          time = sampleTime,
+#          temperature = Temperature,
+#          use_data = useData,
+#          loc_id) 
+# APUtbl %>% 
+#   write.csv(., file = "D:/AKNHP/Temperature_Data/Database/Import files/apu_anchor_data.csv")
+# 
+# KBRtbl <- KBRdat %>%
+#   filter(useData == 1) %>% 
+#   left_join(db_locTbl %>% select(contact_siteid, loc_id), by = c("Site" = "contact_siteid"))  %>%
+#   select(date = sampleDate,
+#          time = sampleTime,
+#          temperature = Temperature,
+#          use_data = useData,
+#          loc_id) 
+# KBRtbl %>% 
+#   write.csv(., file = "D:/AKNHP/Temperature_Data/Database/Import files/kbr_anchor_data.csv")
+# 
+# 
 
 
 ```
