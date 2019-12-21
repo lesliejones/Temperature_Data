@@ -461,8 +461,9 @@ KBRdat %>%
   right_join(kbr.dups)
 
 KBRdat <- KBRdat %>% 
-  group_by(Site, sampleDate, sampleTime, dateTime, doy, year, useData) %>% 
+  group_by(Site, shpName, sampleDate, sampleTime, dateTime, doy, year, useData) %>% 
   summarize(Temperature = mean(Temperature))
+
 ```
 
 
@@ -491,6 +492,8 @@ kbr.rm.days <- KBRdat %>%
 
 Remove days with less than 90% of measurements and save as qaed final for downstream analysis Rmarkdown documents. Save good data (useData == 1) as an Rdata file to be imported into downstream analysis Rmarkdown documents.
 
+Change site name to shpname because that is the name used to join with the RCA ids later.
+
 
 ```{r}
 
@@ -499,7 +502,10 @@ KBRdat <- KBRdat %>%
   filter(is.na(n))
 
 KBRdatFinal <- KBRdat %>% 
+  ungroup() %>% 
   filter(useData == 1) %>% 
+  select(-Site) %>% 
+  rename(Site = shpName) %>% 
   select(-n)
 
 save(KBRdatFinal, file = "output/KBRdat_postQA.Rdata")

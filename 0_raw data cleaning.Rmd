@@ -59,7 +59,7 @@ CIKknb <- CIKknb %>%
 
 CIKdat <- bind_rows(CIKdat, CIKknb)
 ```
-
+oo
 For plotting raw data, need dates and times in one field. Also add doy and year so that they can be used in figures.
 
 ```{r}
