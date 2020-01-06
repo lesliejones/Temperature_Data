@@ -13,10 +13,11 @@ knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
 library(lubridate)
 library(rgdal)
 library(zoo)
-library(tidyverse)
 library(sf)
 library(corrplot)
 library(MuMIn)
+library(ape)
+library(tidyverse)
 ```
 
 
@@ -26,7 +27,6 @@ library(MuMIn)
 ## 8-day moving average of stream temperature data
 
 Moving average function in CAtools which will remove NAs. We can now calculate a running mean independent of the number of data points available in each window (e.g. 8). Separately, calculate the number of non NA values in each window by replacing all non-NA values with 1 and filter on those running means with counts < 5.
-
 
 Load data files from previously that only have useData == 1. 
 Bind all the of data together first before calculating running means. Calculate mean daily temperatures.
@@ -53,6 +53,7 @@ temp <- temp %>%
 
 
 Use complete to fill in missing dates for all sites so that moving average is only calculating when the 8 days prior actually have data. (i.e. not going from October 2004 to April 2005).
+
 Calculate a moving average that takes the 7 days prior and day itself and calculates a mean and removes any missing values (NAs). Add a new field that is 0 when mean temp is NA and 1 when we have a measurement. Do a rolling sum on that field over the same window so we know how many measurements were used in the rolling mean. Only keep moving averages that were calculated from 5 or more measurements! DONE!
 
 ```{r}
@@ -102,7 +103,7 @@ First .csv file has the temperature site information (ACCS site id) along with t
 
 Note: the original accs_siteids applied to the KBR data weren't brought in because I had to go back to the raw data to figure out what was going on (site locations). So, create a join field that includes the contact_siteid for the KBR sites only. (contact id 2)
 
-Also note: Some of the KBR data was not in the Anchor River watershed so they won't have rca_ids. Probably the easiest wya to remove these will be when merges are made in the data analysis report (e.g. !is.na(rca_id).
+Also note: Some of the KBR data was not in the Anchor River watershed so they won't have rca_ids. Probably the easiest way to remove these will be when merges are made in the data analysis report (e.g. !is.na(rca_id).
 
 ```{r}
 
@@ -176,15 +177,18 @@ temp.rca %>%
 
 ```
 
-Just keep one mean elevation, slope in percent, and contributing area.
+Just keep one mean elevation, slope in percent, and contributing area. Convert square meters to square kilometers for contributing area. 1 square kilometer = 1,000,000 square meters.
+
 See email from Leslie on 12-20-19: "use the slope_P (percent) or slope_D (degrees) for the model. Upstream Contributing Area: Maximum flow accumulation value for RCA * multiplied by cell size."
+
+Note that contributing area is not being calculated correctly for the RCAs right now (1/6/20). This is a problem we had Dustin looking into for the IDW calculations, where we want watershed area draining to each RCA outlet as well. Problem is that the RCA polygons are grabbing higher flow accumulation values downstream, possibly we could get around this by grabbing the 95th percentile FAC value for each RCA to drop the highest outliers.
 
 ```{r}
 temp.rca <- temp.rca %>% 
   select(-meanT, -meanNotNA, -ma_sum, -(Z_Min:length_m), -slope_D, -elev_min,
-         -elev_max)
+         -elev_max) %>% 
+  mutate(cont_area = cont_area / 1000000)
 ```
-
 
 
 ## Merge daymet data to stream temperature data frame
@@ -215,7 +219,6 @@ daymet %>%
 
 
 ```
-
 
 Merge the daymet data (i.e. air temp, swe, and precip covariates) to the stream temperature data frame so that only rca_ids and dates in the stream temperature data frame for which we have empirical data are kept. For now, remove daymet so it doesn't bog down the system (though we will need it later for prediction). 
 
@@ -321,17 +324,30 @@ Merge LST to the model data frame with daymet and spatial covariates. Leslie and
 
 temp.dm <- temp.dm %>% 
   mutate(date_day1 = date_day5 - 4) %>% 
-  left_join(lst, by = c("rca_id" = "rca_id", "date_day1" = "date")) 
-
-temp.dm <- temp.dm %>% 
+  left_join(lst, by = c("rca_id" = "rca_id", "date_day1" = "date")) %>% 
   mutate(lst2 = LST * 0.02 - 273.15)
 
 ```
+
+
+## Save data frame with empirical data, daymet, and lst.
+
+```{r}
+save(temp.dm, file = "output/temp.dm")
+
+# load(file = "output/temp.dm.Rdata")
+```
+
+
+
+## Explore LST and daymet as covariates
 
 See correlation between lst and daymet.
 Test models of stream temp with each.
 
 ```{r}
+# load(file = "output/temp.dm.Rdata")
+
 cor(temp.dm$lst2, temp.dm$tair, use = "pairwise.complete.obs")
 
 temp.dm %>% 
@@ -350,7 +366,7 @@ plot LST versus stream temperature.
 ```{r}
 temp.dm %>% 
   ggplot() +
-  geom_point(aes(x = LST, y = ma_mean, color = month)) +
+  geom_point(aes(x = lst2, y = ma_mean, color = as.factor(month))) +
   facet_wrap(~Site) 
 
 ```
@@ -358,13 +374,14 @@ temp.dm %>%
 
 
 ```{r}
+temp.dm %>% 
+  filter(!is.na(LST)) %>% 
+  summarize(clm = cor(lst2, ma_mean),
+            cam = cor(tair, ma_mean))
 
-cor(temp.dm$lst2, temp.dm$ma_mean, use = "pairwise.complete.obs")
-cor(temp.dm$tair, temp.dm$ma_mean, use = "pairwise.complete.obs")
 
-
-lm1 <- lm(ma_mean ~ scale(tair), data = temp.dm)
-lm2 <- lm(ma_mean ~ scale(LST), data = temp.dm)
+lm1 <- lm(ma_mean ~ tair, data = temp.dm %>% filter(!is.na(LST)))
+lm2 <- lm(ma_mean ~ lst2, data = temp.dm %>% filter(!is.na(LST)))
 AIC(lm1, lm2)
 
 ```
@@ -373,14 +390,89 @@ Try out sets of models.
 
 ```{r}
 
+corrplot.mixed(cor(temp.dm %>% select(tair, prcp, swe, slope_P, elev_mean, cont_area)))
+
 full.model <- lm(ma_mean ~ tair + prcp + swe + slope_P + elev_mean + cont_area, data = temp.dm,
                  na.action = "na.fail")
 
+vif(full.model)
+
+
+summary(full.model)
 dredge(full.model)
 
 ```
 
+Number of sites within each year and number of days within each year. (similar to table 1 in mcnyset)
 
+```{r}
+temp.dm %>% 
+  distinct(sampleDate, year) %>% 
+  count(year)
+
+temp.dm %>% 
+  distinct(Site, year) %>% 
+  count(year)
+```
+
+Check for spatial autocorrelation in residuals. Following instructions here: [How can I calculate Moran's I in R?] https://stats.idre.ucla.edu/r/faq/how-can-i-calculate-morans-i-in-r/.
+
+
+```{r}
+temp.dm <- temp.dm %>% 
+  mutate(resid.fm = resid(full.model)) 
+
+temp.dists <- temp.dm %>% 
+  left_join(rca_join %>% select(Site_join, latitude, longitude), by = c("Site" = "Site_join")) 
+
+temp.dists <- temp.dists %>% 
+  filter
+  select(latitude, longitude) %>% 
+  dist(.) %>% 
+  as.matrix
+
+temp.dists.inv <- 1/(temp.dists + 1)
+diag(temp.dists.inv) <- 0
+ 
+temp.dists.inv[1:5, 1:5]
+
+temp.dists[1:50, 1:50]
+
+Moran.I(temp.dm$resid.fm, temp.dists.inv)
+```
+
+I don't think this is working because we have very few sites, ~ 20, but 8000 observations. This may not be a meaningful thing to look at, except for when we have data from many sites on the same date.
+Pick a sample date from 2007 with all 15 sites, sometime in September. Looks ok. Could loop this to calculate for a series of dates with many sites (15 or more)....
+
+```{r}
+temp.dm %>% 
+  distinct(Site, sampleDate) %>% 
+  count(sampleDate) %>% 
+  filter(n > 14)
+
+temp.dists <- temp.dm %>% 
+  filter(sampleDate == "2007-09-20") %>% 
+  left_join(rca_join %>% select(Site_join, latitude, longitude), by = c("Site" = "Site_join")) 
+
+temp.dists <- temp.dists %>% 
+  select(latitude, longitude) %>% 
+  dist(.) %>% 
+  as.matrix
+
+temp.dists.inv <- 1/(temp.dists)
+diag(temp.dists.inv) <- 0
+ 
+temp.dists.inv[1:5, 1:5]
+
+Moran.I(temp.dm %>% filter(sampleDate == "2007-09-20") %>% pull(resid.fm), temp.dists.inv)
+
+
+```
+
+
+## Checking for temporal autocorrelation.
+
+We will need to fill all the missing dates back in for each site and check by Site. The function to fill in dates by group is above.
 
 ## Save CSV of all data currently available 12.20.19
 
