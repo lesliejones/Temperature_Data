@@ -17,6 +17,7 @@ library(sf)
 library(corrplot)
 library(MuMIn)
 library(ape)
+library(readxl)
 library(tidyverse)
 ```
 
@@ -99,7 +100,9 @@ temp_8day %>%
 
 ## Merge RCA ids and attributes to stream temperature data frame
 
-First .csv file has the temperature site information (ACCS site id) along with the RCA site ids. It also has the mean, min, and max elevation for that RCA. These RCA site ids can be used to filter the climate data actually needed for modeling.
+RCA site ids can be used to filter the climate data actually needed for modeling.
+
+Shifted a few sites so that they fell within the correct RCA (3 sites below the confluence of NF and SF Anchor). Also one of Sue's tributaries was shifted to be on the right stream and rca. Excel file in output folder that has site ids and RCAs linked. 
 
 Note: the original accs_siteids applied to the KBR data weren't brought in because I had to go back to the raw data to figure out what was going on (site locations). So, create a join field that includes the contact_siteid for the KBR sites only. (contact id 2)
 
@@ -107,7 +110,7 @@ Also note: Some of the KBR data was not in the Anchor River watershed so they wo
 
 ```{r}
 
-rca_join <- read_csv("Data/Spatial_data/Anchor/tempsites_rcas.csv")
+rca_join <- read_excel("Data/anchor_sites_rcas.xlsx")
 
 rca_join <- rca_join %>% 
   mutate(Site_join = case_when(contact_id == 2 ~ contact_siteid,
@@ -125,13 +128,17 @@ temp.rca <- rca_join %>%
   right_join(temp_8day, by = c("Site_join" = "Site")) %>% 
   rename(Site = Site_join)
   
-temp.rca %>% distinct(Site, rca_id)
+temp.rca %>% 
+  distinct(Site, rca_id) %>% 
+  arrange(rca_id)
 
 temp.rca <- temp.rca %>% 
-  filter(!is.na(rca_id))
+  filter(!rca_id == 0)
 ```
 
 Read in covariates associated with the reaches and RCAs in the geodatabase. Note that the reachid and the rcaids are the same.
+
+Leslie updated the contributing area for each RCA by doing a negative buffer so we weren't grabbing cells of confluences (1/6/20). Use the rca_cont_area feature class to get the correct information for this attribute.
 
 ```{r}
 
@@ -144,14 +151,14 @@ print(fc_list)
 
 # Read the feature class
 rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches")
-rca_reachdf <- rca_reach %>% st_drop_geometry()
 
 rcas <- sf::st_read(dsn = fgdb, layer = "anchor_rcas")
-rcasdf <- rcas %>% st_drop_geometry()
+
+contarea <- sf::st_read(dsn = fgdb, layer = "rca_cont_area")
 
 ```
 
-Merge attributes for both to the new data frame.
+Merge attributes for all to the new data frame. Use the flowacc_max value in the rca_cont_area feature class and then convert to square kilometers. (The cont_area is the flow accumulation multiplied by 5, when it should be 25.)
 
 ```{r}
 
@@ -160,8 +167,13 @@ temp.rca <- temp.rca %>%
   select(-Shape)
 
 temp.rca <- temp.rca %>% 
-  left_join(rcas %>% select(rca_id:elev_max, cont_area), by = c("rca_id" = "rca_id")) %>% 
+  left_join(rcas %>% select(rca_id:elev_max), by = c("rca_id" = "rca_id")) %>% 
   select(-Shape)
+
+temp.rca <- temp.rca %>% 
+  left_join(contarea %>% select(rca_id, flowacc_max), by = c("rca_id" = "rca_id")) %>% 
+  select(-Shape)
+
 
 ```
 
@@ -171,23 +183,28 @@ Explore if some of the elevation and slope covariates are correlated.
 
 temp.rca %>% 
   distinct(Z_Min, Z_Max, Z_Mean, SLength, Min_Slope, Max_Slope, Avg_Slope, length_m, slope_P, slope_D,
-           elev_mean, elev_max, elev_min, cont_area) %>% 
+           elev_mean, elev_max, elev_min, flowacc_max) %>% 
   cor(.) %>% 
   corrplot.mixed(.)
 
 ```
 
-Just keep one mean elevation, slope in percent, and contributing area. Convert square meters to square kilometers for contributing area. 1 square kilometer = 1,000,000 square meters.
+Just keep one mean elevation, slope in percent, and contributing area. Convert flow accumulation to square meters to square kilometers for contributing area. 1 cell = 25 square meters and 1 square kilometer = 1,000,000 square meters.
 
 See email from Leslie on 12-20-19: "use the slope_P (percent) or slope_D (degrees) for the model. Upstream Contributing Area: Maximum flow accumulation value for RCA * multiplied by cell size."
 
-Note that contributing area is not being calculated correctly for the RCAs right now (1/6/20). This is a problem we had Dustin looking into for the IDW calculations, where we want watershed area draining to each RCA outlet as well. Problem is that the RCA polygons are grabbing higher flow accumulation values downstream, possibly we could get around this by grabbing the 95th percentile FAC value for each RCA to drop the highest outliers.
-
 ```{r}
 temp.rca <- temp.rca %>% 
-  select(-meanT, -meanNotNA, -ma_sum, -(Z_Min:length_m), -slope_D, -elev_min,
-         -elev_max) %>% 
-  mutate(cont_area = cont_area / 1000000)
+  select(Site, rca_id, sampleDate, ma_mean, slope_P, elev_mean, flowacc_max) %>% 
+  mutate(cont_area = flowacc_max * 25 / 1000000)
+```
+
+Double check. Great! Maximum flow accumulation near the mouth is 580 km2 and HUC10 is 585.
+
+```{r}
+temp.rca %>% 
+  distinct(cont_area, rca_id) %>% 
+  arrange(desc(cont_area))
 ```
 
 
