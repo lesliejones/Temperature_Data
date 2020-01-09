@@ -203,7 +203,7 @@ Double check. Great! Maximum flow accumulation near the mouth is 580 km2 and HUC
 
 ```{r}
 temp.rca %>% 
-  distinct(cont_area, rca_id) %>% 
+  distinct(cont_area, rca_id, Site) %>% 
   arrange(desc(cont_area))
 ```
 
