@@ -1,0 +1,118 @@
+---
+title: "2_model exploration"
+author: "Leslie Jones"
+date: "1/7/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
+
+library(lubridate)
+library(rgdal)
+library(zoo)
+library(sf)
+library(corrplot)
+library(MuMIn)
+library(ape)
+library(readxl)
+library(VIF)
+library(tidyverse)
+```
+
+## Database for Anchor Model
+Load data frame from 1_data analysis.Rmd
+
+```{r}
+load(file = "output/temp.dm")
+#remove April
+temp.dm <- filter(temp.dm, month > 4)
+
+
+```
+
+## Explore LST and daymet as covariates
+
+correlation between LST and air temperature by month
+```{r}
+temp.dm %>%
+  group_by(month) %>%
+  summarise(cor = cor(lst2, tair, use = "pairwise.complete.obs"))
+```
+
+correlation between stream temp and air temperature by month
+```{r}
+temp.dm %>%
+  group_by(month) %>%
+  summarise(cor = cor(ma_mean, tair ))
+```
+
+correlation between stream temp and LST by month
+```{r}
+temp.dm %>%
+  group_by(month) %>%
+  summarise(cor = cor(ma_mean, lst2, use = "pairwise.complete.obs"))
+```
+
+plot air temperature and LST by month
+```{r}
+temp.dm %>% 
+  ggplot() +
+  geom_point(aes(x = tair, y = lst2)) +
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(limits = c(0, 25)) +
+  scale_y_continuous(limits = c(0, 25)) +
+  facet_wrap(~month)
+
+```
+plot air temperature and stream temperature by month
+```{r}
+temp.dm %>% 
+  ggplot() +
+  geom_point(aes(x = tair, y = ma_mean)) +
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(limits = c(0, 25)) +
+  scale_y_continuous(limits = c(0, 25)) +
+  facet_wrap(~month)
+```
+
+plot LST versus stream temperature.
+
+```{r}
+temp.dm %>% 
+  ggplot() +
+  geom_point(aes(x = lst2, y = ma_mean, color = as.factor(month))) +
+  facet_wrap(~Site) 
+
+```
+
+
+## Modeling
+
+Try out sets of models.
+
+```{r}
+
+corrplot.mixed(cor(temp.dm %>% select(tair, prcp, swe, slope_P, elev_mean, cont_area)))
+
+model1 <- lm(ma_mean ~ tair, data=temp.dm)
+model2 <- lm(ma_mean ~ tair + elev_mean, data=temp.dm)
+model3 <- lm(ma_mean ~ tair + elev_mean + slope_P, data=temp.dm)
+model4 <- lm(ma_mean ~ tair + elev_mean + slope_P + cont_area, data=temp.dm)
+model5 <- lm(ma_mean ~ tair + elev_mean + slope_P + cont_area + prcp, data=temp.dm)
+AIC(model1, model2, model3, model4, model5)
+
+#make month a factor
+month.f <- factor(temp.dm$month)
+is.factor(temp.dm$month.f)
+
+full.model <- lm(ma_mean ~ tair + prcp + swe + slope_P + elev_mean + cont_area + month.f, data = temp.dm,
+                 na.action = "na.fail")
+
+summary(full.model)
+dredge(full.model)
+
+summary(lm)
+
+```
+
