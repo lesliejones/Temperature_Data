@@ -17,7 +17,7 @@ library(tidyverse)
 Read in spatial covariates associated with each RCA. These are stored in three separate feature classes.
 
 ```{r}
-fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/Anchor.gdb"
+fgdb <- "W:/GIS/KFHP/Geodatabase/Anchor.gdb"
 
 # List all feature classes in a file geodatabase
 subset(ogrDrivers(), grepl("GDB", name))
@@ -66,7 +66,7 @@ Read in daymet data.
 
 ```{r}
 
-fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_DAYMET.gdb"
+fgdb <- "W:/GIS/KFHP/Geodatabase/anchor_DAYMET.gdb"
 
 # List all feature classes in a file geodatabase
 subset(ogrDrivers(), grepl("GDB", name))

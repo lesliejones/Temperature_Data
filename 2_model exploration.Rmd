@@ -26,7 +26,28 @@ Load data frame from 1_data analysis.Rmd
 ```{r}
 load(file = "output/temp.dm")
 #remove April
-temp.dm <- filter(temp.dm, month > 4)
+temp.dm1 <- filter(temp.dm, month > 4)
+
+wetland <- read.csv("output/anch_rca_wetland.csv", header=TRUE)
+forest <- read.csv("output/anch_rca_forest.csv", header=TRUE)
+shrub <- read.csv("output/anch_rca_shrub.csv", header=TRUE)
+
+#join wetland percentages
+temp.dm2 <- temp.dm1 %>% 
+  left_join(wetland %>% select(reachid, PERCENTAGE), by = c("rca_id" = "reachid")) %>% rename(wetland = PERCENTAGE) %>% mutate(wetland=replace_na(wetland, 0))
+
+summary(temp.dm2)
+
+#join forest percentages
+temp.dm3 <- temp.dm2 %>% 
+  left_join(forest %>% select(reachid, PERCENTAGE), by = c("rca_id" = "reachid")) %>% rename(forest = PERCENTAGE)%>% mutate(forest=replace_na(forest, 0))
+
+#join shrub percentages
+temp.dm <- temp.dm3 %>% 
+  left_join(shrub %>% select(reachid, PERCENTAGE), by = c("rca_id" = "reachid")) %>% rename(shrub = PERCENTAGE) %>% mutate(shrub=replace_na(shrub, 0))
+
+summary(temp.dm)
+
 
 
 ```
@@ -93,7 +114,7 @@ Try out sets of models.
 
 ```{r}
 
-corrplot.mixed(cor(temp.dm %>% select(tair, prcp, swe, slope_P, elev_mean, cont_area)))
+corrplot.mixed(cor(temp.dm %>% select(tair, prcp, swe, slope_P, elev_mean, cont_area, wetland, forest, shrub)))
 
 model1 <- lm(ma_mean ~ tair, data=temp.dm)
 model2 <- lm(ma_mean ~ tair + elev_mean, data=temp.dm)
@@ -109,8 +130,11 @@ is.factor(temp.dm$month.f)
 full.model <- lm(ma_mean ~ tair + prcp + swe + slope_P + elev_mean + cont_area + month.f, data = temp.dm,
                  na.action = "na.fail")
 
-summary(full.model)
-dredge(full.model)
+full.model2 <- lm(ma_mean ~ tair + prcp + swe + slope_P + elev_mean + cont_area + month.f + wetland + shrub, data = temp.dm,
+                 na.action = "na.fail")
+
+summary(full.model2)
+dredge(full.model2)
 
 summary(lm)
 
