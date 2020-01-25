@@ -18,65 +18,87 @@ library(ape)
 library(readxl)
 library(VIF)
 library(tidyverse)
+library(jtools)
 ```
 
 ## Database for Anchor Model
 Load data frame from 1_data analysis.Rmd
+I calculated percent wetland, forest, and shrub riparian cover in GIS by buffering stream by 30m, converted nlcd raster to polygon, used select function to save individual polygon layers of wetland, forest, and shrub. Used Tabulate intersection function to get tables by rca_id or percent overlap and then joined tables to rca shapefile.
+The covariates are joined individually to the anchor dataframe here. Code also replaces NA with 0 for all 3 covariates.Remove month of April.
 
 ```{r}
+#load temperature database from 1_data analysis.Rmd
 load(file = "output/temp.dm")
+
 #remove April
 temp.dm1 <- filter(temp.dm, month > 4)
 
-wetland <- read.csv("output/anch_rca_wetland.csv", header=TRUE)
-forest <- read.csv("output/anch_rca_forest.csv", header=TRUE)
-shrub <- read.csv("output/anch_rca_shrub.csv", header=TRUE)
+#Pulling nlcd data summaries from Dustin off T:drive and joining to existing temperature database
+fgdb <- "T:/Aquatic/KFHP/Geodatabases/Anchor.gdb"
+
+# List all feature classes in a file geodatabase
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+
+# Read the feature class
+nlcd <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_NLCD_Tab_Int")
+
+forests <- nlcd %>% 
+   filter(Land_Cover_Reclass=='Forest') %>% group_by(reachid) %>% summarize(forest= sum(PERCENTAGE)) %>% mutate(rca_id=reachid)
+
+shrubs <-  nlcd %>% 
+   filter(Land_Cover_Reclass=='Shrub') %>% group_by(reachid) %>% summarize(shrub= sum(PERCENTAGE)) %>% mutate(rca_id=reachid)
+
+wetlands <-  nlcd %>% 
+   filter(Land_Cover_Reclass=='Wetlands') %>% group_by(reachid) %>% summarize(wetland= sum(PERCENTAGE)) %>% mutate(rca_id=reachid)
 
 #join wetland percentages
 temp.dm2 <- temp.dm1 %>% 
-  left_join(wetland %>% select(reachid, PERCENTAGE), by = c("rca_id" = "reachid")) %>% rename(wetland = PERCENTAGE) %>% mutate(wetland=replace_na(wetland, 0))
+  left_join(wetlands, select(rca_id, wetland), by = "rca_id") %>% mutate(wetland = replace_na(wetland, 0))
 
 summary(temp.dm2)
 
 #join forest percentages
 temp.dm3 <- temp.dm2 %>% 
-  left_join(forest %>% select(reachid, PERCENTAGE), by = c("rca_id" = "reachid")) %>% rename(forest = PERCENTAGE)%>% mutate(forest=replace_na(forest, 0))
+  left_join(forests %>% select(rca_id, forest), by = "rca_id") %>% mutate(forest = replace_na(forest, 0))
 
 #join shrub percentages
 temp.dm <- temp.dm3 %>% 
-  left_join(shrub %>% select(reachid, PERCENTAGE), by = c("rca_id" = "reachid")) %>% rename(shrub = PERCENTAGE) %>% mutate(shrub=replace_na(shrub, 0))
+  left_join(shrubs %>% select(rca_id, shrub), by = "rca_id") %>% mutate(shrub = replace_na(shrub, 0))
 
 summary(temp.dm)
 
-
-
 ```
 
-## Explore LST and daymet as covariates
-
-correlation between LST and air temperature by month
-```{r}
+### Correlation between LST and air temperature by month
+```{r, echo=FALSE, warnings = FALSE}
 temp.dm %>%
   group_by(month) %>%
   summarise(cor = cor(lst2, tair, use = "pairwise.complete.obs"))
 ```
 
-correlation between stream temp and air temperature by month
-```{r}
+###correlation between stream temp and air temperature by month
+```{r, echo=FALSE, warnings = FALSE}
 temp.dm %>%
   group_by(month) %>%
   summarise(cor = cor(ma_mean, tair ))
 ```
 
-correlation between stream temp and LST by month
-```{r}
+###correlation and plot between stream temp and LST by month
+```{r, echo=FALSE, warnings = FALSE}
 temp.dm %>%
   group_by(month) %>%
   summarise(cor = cor(ma_mean, lst2, use = "pairwise.complete.obs"))
+
+temp.dm %>% 
+  ggplot() +
+  geom_point(aes(x = lst2, y = ma_mean, color = as.factor(month))) +
+  facet_wrap(~Site) 
 ```
 
-plot air temperature and LST by month
-```{r}
+###plot air temperature and LST by month
+```{r, echo=FALSE, warnings = FALSE}
 temp.dm %>% 
   ggplot() +
   geom_point(aes(x = tair, y = lst2)) +
@@ -86,8 +108,11 @@ temp.dm %>%
   facet_wrap(~month)
 
 ```
-plot air temperature and stream temperature by month
-```{r}
+###plot air temperature and stream temperature by month
+
+
+
+```{r, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE}
 temp.dm %>% 
   ggplot() +
   geom_point(aes(x = tair, y = ma_mean)) +
@@ -95,48 +120,239 @@ temp.dm %>%
   scale_x_continuous(limits = c(0, 25)) +
   scale_y_continuous(limits = c(0, 25)) +
   facet_wrap(~month)
+
+month5 <- filter(temp.dm,month==5)   
+  ggplot() +
+  geom_point(data=month5, aes(x = day, y = ma_mean, color=year)) +
+  scale_y_continuous(limits = c(0, 31)) + 
+  scale_y_continuous(limits = c(0, 25)) +
+  facet_wrap(~Site, scales="free")
+  
+  month6 <- filter(temp.dm,month==6)   
+  ggplot() +
+  geom_point(data=month6, aes(x = day, y = ma_mean, color=year)) +
+  scale_y_continuous(limits = c(0, 31)) + 
+  scale_y_continuous(limits = c(0, 25)) +
+  facet_wrap(~Site, scales="free")
+  
+  month7 <- filter(temp.dm,month==7)   
+  ggplot() +
+  geom_point(data=month7, aes(x = day, y = ma_mean, color=year)) +
+  scale_y_continuous(limits = c(0, 31)) + 
+  scale_y_continuous(limits = c(0, 25)) +
+  facet_wrap(~Site, scales="free")
+  
+   month8 <- filter(temp.dm,month==8)   
+  ggplot() +
+  geom_point(data=month8, aes(x = day, y = ma_mean, color=year)) +
+  scale_y_continuous(limits = c(0, 31)) + 
+  scale_y_continuous(limits = c(0, 25)) +
+  facet_wrap(~Site, scales="free")
+  
+  month9 <- filter(temp.dm,month==9)   
+  ggplot() +
+  geom_point(data=month9, aes(x = day, y = ma_mean, color=year)) +
+  scale_y_continuous(limits = c(0, 31)) + 
+  scale_y_continuous(limits = c(0, 25)) +
+  facet_wrap(~Site, scales="free")
+
 ```
 
-plot LST versus stream temperature.
+
+
+
+#Remove temperatures less than 0 and calculate temperature index (waterT-airT)/waterT. index approaches 0 then air and stream temp are most similar.
+ 
+```{r, echo=FALSE, warnings = FALSE}
+#filter temps less than 2
+temp <- temp.dm %>% filter(ma_mean > 0) %>% mutate(index=(ma_mean-tair)/ma_mean)
+
+ggplot() + geom_point (data=temp, aes(x = day, y = index, color=year)) +
+     facet_wrap(~Site, scales="free_y") 
+
+month5b <- filter(temp,month==5) 
+ggplot() + geom_point (data=month5b, aes(x = day, y = index, color=year)) +
+     facet_wrap(~Site, scale="free_y") 
+
+month6b <- filter(temp,month==6) 
+ggplot() + geom_point (data=month6b, aes(x = day, y = index, color=year)) +
+     facet_wrap(~Site, scales="free_y") 
+
+month7b <- filter(temp,month==7) 
+ggplot() + geom_point (data=month7b, aes(x = day, y = index, color=year)) +
+     facet_wrap(~Site, scales="free_y") 
+
+month8b <- filter(temp,month==8) 
+ggplot() + geom_point (data=month8b, aes(x = day, y = index, color=year)) +
+     facet_wrap(~Site, scales="free_y") 
+
+month9b <- filter(temp,month==9) 
+ggplot() + geom_point (data=month9b, aes(x = day, y = index, color=year)) +
+     facet_wrap(~Site, scales="free_y") 
+
+
+
+```
+###Remove all data prior to June 1 (Julian Day 152) and replot index
+```{r, warnings = FALSE, echo=FALSE}
+temp <- temp %>% filter(day > 152) 
+ggplot() + geom_point (data=temp, aes(x = day, y = index, color=year)) +
+     facet_wrap(~Site)
+```
+
+###Look at distribution of covariates to include in model
+```{r, ehco=FALSE, warnings = FALSE}
+hist(temp$ma_mean)
+hist(temp$tair)
+hist(temp$prcp)
+hist(temp$swe)
+```
+###plot time-series to see seasonal split
+
 
 ```{r}
-temp.dm %>% 
-  ggplot() +
-  geom_point(aes(x = lst2, y = ma_mean, color = as.factor(month))) +
-  facet_wrap(~Site) 
+
+sites <- temp %>% distinct(Site) %>% pull(Site)
+# i <- sites[14]
+
+pdf("Plots of temperature by year and site.pdf", width = 12, height = 8, units = "in")
+
+for(i in sites) {
+  dat <- temp %>% filter(Site == i)
+  sitename <- dat %>% distinct(Site) %>% pull(Site)
+  p <- ggplot(data = dat, aes(x = day, y = ma_mean)) +
+    geom_line() +
+    facet_wrap(~year) +
+    labs(main = sitename)
+  print(p)
+}
+
+dev.off()
+
+
+max_ma_mean <- temp %>% 
+  filter(month %in% 6:8) %>% 
+  group_by(Site, year) %>% 
+  summarize(ma_mean = max(ma_mean, na.rm = TRUE),
+            number_of_days = n()) %>% 
+  filter(number_of_days > 71)
+
+max_ma_mean
+
+temp %>% 
+  right_join(max_ma_mean) %>% 
+  summarize(mean(day),
+            sd(day))
 
 ```
 
-
-## Modeling
+### Modeling
 
 Try out sets of models.
 
-```{r}
+```{r, echo=FALSE}
 
-corrplot.mixed(cor(temp.dm %>% select(tair, prcp, swe, slope_P, elev_mean, cont_area, wetland, forest, shrub)))
+corrplot.mixed(cor(temp %>% select(ma_mean, tair, prcp, swe, slope_P, elev_mean, cont_area, wetland, forest, shrub)))
 
-model1 <- lm(ma_mean ~ tair, data=temp.dm)
-model2 <- lm(ma_mean ~ tair + elev_mean, data=temp.dm)
-model3 <- lm(ma_mean ~ tair + elev_mean + slope_P, data=temp.dm)
-model4 <- lm(ma_mean ~ tair + elev_mean + slope_P + cont_area, data=temp.dm)
-model5 <- lm(ma_mean ~ tair + elev_mean + slope_P + cont_area + prcp, data=temp.dm)
-AIC(model1, model2, model3, model4, model5)
+#model1 <- lm(ma_mean ~ tair, data=temp.dm)
+#model2 <- lm(ma_mean ~ tair + elev_mean, data=temp.dm)
+#model3 <- lm(ma_mean ~ tair + elev_mean + slope_P, data=temp.dm)
+#model4 <- lm(ma_mean ~ tair + elev_mean + slope_P + cont_area, data=temp.dm)
+#model5 <- lm(ma_mean ~ tair + elev_mean + slope_P + cont_area + prcp, data=temp.dm)
+#AIC(model1, model2, model3, model4, model5)
 
 #make month a factor
-month.f <- factor(temp.dm$month)
-is.factor(temp.dm$month.f)
+month.f <- factor(temp$month)
+is.factor(temp$month.f)
 
-full.model <- lm(ma_mean ~ tair + prcp + swe + slope_P + elev_mean + cont_area + month.f, data = temp.dm,
-                 na.action = "na.fail")
+full.model <- lm(ma_mean ~ tair + month*tair + slope_P + elev_mean + cont_area + month.f + wetland + shrub +forest, data = temp,
+                na.action = "na.fail")
 
-full.model2 <- lm(ma_mean ~ tair + prcp + swe + slope_P + elev_mean + cont_area + month.f + wetland + shrub, data = temp.dm,
-                 na.action = "na.fail")
+dredge(full.model)
 
-summary(full.model2)
-dredge(full.model2)
+chosen.model <- lm(ma_mean ~ tair  + month*tair  + slope_P + elev_mean + cont_area + forest + shrub + wetland  , data = temp,
+                na.action = "na.fail")
+summary(chosen.model)
+plot(chosen.model)
+summ(chosen.model,confint = TRUE, digits = 3)
 
-summary(lm)
+#save predicted an residual
+temp$predicted <- predict(chosen.model)
+temp$residuals <- residuals(chosen.model)
+hist(temp$residuals)
+ggplot(data = temp, aes(x= ma_mean, y=predicted, colour=year)) + geom_point()
+ggplot(data = temp, aes(x= ma_mean, y=predicted, colour=Site)) + geom_point()
+
+ggplot(data = temp, aes(x= ma_mean, y=residuals, color=Site)) + geom_point()
+ggplot(data = temp, aes(x= day, y=residuals, group=year, color=year)) + geom_point()+ facet_wrap(~Site)
+ggplot(data = temp, aes(x= day, y=ma_mean, group=year, color=year)) + geom_point()+ facet_wrap(~Site)
+
+#check out high residuals
+resid <- temp %>% filter(residuals > 3)
+ggplot(data = resid, aes(x= ma_mean, y=residuals, color=Site)) + geom_point()
+ggplot(data = resid, aes(x= ma_mean, y=predicted, color=Site)) + geom_point()
+
+#star <- temp %>% filter(Site=='STAR 171 Lower') 
+#ggplot(data=resid, aes(y=ma_mean, x=sampleDate)) + geom_point()
+
+
 
 ```
+###Investigate model by month to see how coefficients behave
+June Model
+```{r}
+June <- temp %>% filter(month==6)
+full.modelJ <- lm(ma_mean ~ tair + slope_P + elev_mean + cont_area + wetland + shrub +forest, data = June,
+                na.action = "na.fail")
 
+dredge(full.modelJ)
+
+chosen.modelJ <- lm(ma_mean ~ tair + slope_P + elev_mean + cont_area + forest + shrub + wetland  , data = June,
+                na.action = "na.fail")
+summary(chosen.modelJ)
+summ(chosen.modelJ,confint = TRUE, digits = 3)
+```
+###Investigate model by month to see how coefficients behave
+July Model
+```{r}
+July <- temp %>% filter(month==7)
+full.modelJY <- lm(ma_mean ~ tair + slope_P + elev_mean + cont_area + wetland + shrub +forest, data = July,
+                na.action = "na.fail")
+
+dredge(full.modelJY)
+
+chosen.modelJY <- lm(ma_mean ~ tair + slope_P + elev_mean + cont_area + forest + shrub + wetland  , data = July,
+                na.action = "na.fail")
+summary(chosen.modelJY)
+summ(chosen.modelJY, confint = TRUE, digits = 3)
+```
+
+###Investigate model by month to see how coefficients behave
+August Model
+```{r}
+August <- temp %>% filter(month==8)
+full.modelA <- lm(ma_mean ~ tair + slope_P + elev_mean + cont_area + wetland + shrub +forest, data = August,
+                na.action = "na.fail")
+
+dredge(full.modelA)
+
+chosen.modelA <- lm(ma_mean ~ tair + slope_P + elev_mean + cont_area + forest + shrub + wetland  , data = August,
+                na.action = "na.fail")
+summary(chosen.modelA)
+summ(chosen.modelA, confint = TRUE, digits = 3)
+```
+
+###Investigate model by month to see how coefficients behave
+September Model
+```{r}
+Sept <- temp %>% filter(month==9)
+full.modelS <- lm(ma_mean ~ tair + slope_P + elev_mean + cont_area + wetland + shrub +forest, data = Sept,
+                na.action = "na.fail")
+
+dredge(full.modelS)
+
+chosen.modelS <- lm(ma_mean ~ tair + slope_P + elev_mean + cont_area + forest + shrub + wetland  , data = Sept,
+                na.action = "na.fail")
+summary(chosen.modelS)
+summ(chosen.modelS, confint = TRUE, digits = 3)
+```
