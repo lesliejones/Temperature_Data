@@ -38,6 +38,7 @@ hist(temp$swe)
 ```
 
 ### Look at linear model for 2 seasons based on ascending and descending limb of stream temperature and air temperature distribution: see 2_Data and model exploration.Rmd - split is julian day 201.  Will have 2 seasons June 1 - July 20: (152-201) and july 21 - September 30: (202-303)
+
 ```{r}
 spring <- temp %>%
   filter(day < 202)
@@ -90,120 +91,41 @@ AIC(lme1, full.model)
 anova(lme1, full.model)
 ```
 
-Mixed effects model much better than model without random effect. Move forward with model selection, but switch to ML.
+Mixed effects model much better than model without random effect. Move forward with model selection, but switch to ML. Add RMSE to dredge table to compare models.
 
 ```{r}
 
 lme2 <- lme(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + cont_area * elev_mean, 
             random = ~ 1|HUC_name, data = spring_meanT, na.action = "na.fail", method = "ML")
 
-lme2.dredge <- dredge(lme2)
-lme2.dredge
+
+model.rmse <- function(x) {
+  rmse <- sqrt(sum(((predict(x) - spring_meanT$meanT)) ^ 2)/2629)
+  rmse
+} 
+
+lme2.dredge <- dredge(lme2, extra = c(model.rmse))
+lme2.dredge %>% kable
+
+write.csv(lme2.dredge, file = "output/lme dredge output.csv")
 
 ```
-Remove wetland because very very small effect. For a 1deg change in stream temperature requires a 0.01% change in wetland cover. Too small to keep in. Shrub also has a very small effect size and also doesn't make sense, more shrub cover increases stream temperature.
-
-
-```{r}
-lme3 <- lme(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + cont_area * elev_mean, 
-            random = ~ 1|HUC_name, data = spring_meanT, na.action = "na.fail", method = "ML")
-
-lme3.dredge <- dredge(lme3)
-lme3.dredge
-
-```
-
+Remove wetland because small effect size - for a 10% increase in wetland cover a 0.1 deg increase in stream temp. Shrub also has a very small effect size and direction doesn't match hypthesis that shrubs provide shade: more shrub cover increases stream temperature.
 
 Remove interaction next. Anytime it is present it changes the direction and effect size of slope.
 
-```{r}
-lme4 <- lme(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area, 
-            random = ~ 1|HUC_name, data = spring_meanT, na.action = "na.fail", method = "ML")
+Looks like contributing area, air temp, precip, and elevation are the most important variables and have similar RMSE to more complex models.
 
-lme4.dredge <- dredge(lme4)
-lme4.dredge
-
-```
-
-
-Calculate RMSE for differnt models. Looks like contributing area, air temp, precip, and elevation are the most important.
-
-
-```{r}
-
-chosen.lme <- eval(getCall(lme4.dredge, 1))
-
-cor(predict(chosen.lme), spring_meanT$meanT)
-
-lme4_1.RMSE <- sqrt(sum(((predict(chosen.lme) - spring_meanT$meanT)) ^ 2)/2629)
-
-
-```
-Try for second and third best models in lme4 dredge results. No improvement in RMSE so no justification for keepign swe or reach slope.
-
-```{r}
-chosen.lme <- eval(getCall(lme4.dredge, 2))
-
-cor(predict(chosen.lme), spring_meanT$meanT)
-
-lme4_2.RMSE <- sqrt(sum(((predict(chosen.lme) - spring_meanT$meanT)) ^ 2)/2629)
-lme4_2.RMSE
-
-
-chosen.lme <- eval(getCall(lme4.dredge, 3))
-
-cor(predict(chosen.lme), spring_meanT$meanT)
-
-lme4_3.RMSE <- sqrt(sum(((predict(chosen.lme) - spring_meanT$meanT)) ^ 2)/2629)
-lme4_3.RMSE
-
-```
+Try for second and third best models in lme4 dredge results. No improvement in RMSE so no justification for keeping swe or reach slope.
 
 Try model 5, which removes precipitation from top model.
 
-```{r}
-chosen.lme <- eval(getCall(lme4.dredge, 5))
-chosen.lme
-
-cor(predict(chosen.lme), spring_meanT$meanT)
-
-lme4_5.RMSE <- sqrt(sum(((predict(chosen.lme) - spring_meanT$meanT)) ^ 2)/2629)
-lme4_5.RMSE
-```
-
 Try model 16, which removes rca mean elevation - now just air temp and contributing area.
 
-```{r}
-chosen.lme <- eval(getCall(lme4.dredge, 16))
-chosen.lme
-
-cor(predict(chosen.lme), spring_meanT$meanT)
-
-lme4_16.RMSE <- sqrt(sum(((predict(chosen.lme) - spring_meanT$meanT)) ^ 2)/2629)
-lme4_16.RMSE
-```
 Try model 32, which is just air temperature.... strange that coefficient goes to 1.0.
 
-```{r}
-chosen.lme <- eval(getCall(lme4.dredge, 32))
-chosen.lme
-
-cor(predict(chosen.lme), spring_meanT$meanT)
-
-lme4_32.RMSE <- sqrt(sum(((predict(chosen.lme) - spring_meanT$meanT)) ^ 2)/2629)
-lme4_32.RMSE
-```
 Try model 23, which is air temperature and elevation.
 
-```{r}
-chosen.lme <- eval(getCall(lme4.dredge, 23))
-chosen.lme
-
-cor(predict(chosen.lme), spring_meanT$meanT)
-
-lme4_23.RMSE <- sqrt(sum(((predict(chosen.lme) - spring_meanT$meanT)) ^ 2)/2629)
-lme4_23.RMSE
-```
 
 Check what the parameter estimates are for the random effect - ie how much does each huc shift off of the population level estimates?
 Following instructions in Zuur et al. pg. 108
@@ -225,25 +147,67 @@ The shifts by HUC12 don't make sense so let's start all over with a regular line
 lm1 <- lm(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + cont_area * elev_mean, 
                  data = spring_meanT, na.action = "na.fail")
 
-lm1.dredge <- lapply(dredge(lm1, evaluate = FALSE), eval)
 
-model.rmse <- function(x) {
-  rmse <- sqrt(sum(((predict(x) - spring_meanT$meanT)) ^ 2)/2629)
-  rmse
-} 
+lm1.dredge <- dredge(lm1, extra = c(model.rmse))  
+lm1.dredge
 
-lm1.dredge.rmse <- lapply(lm1.dredge, model.rmse) %>% unlist %>% tibble::enframe(name = "model")
-
-lm1.dredge2 <- dredge(lm1)  
-
-
-lm1.dredge2 <- left_join(dredge(lm1), lm1.dredge.rmse) 
-
-lm1.dredge2 %>% arrange(value)
 
 ```
 
 
+Leave one out cross-validation and RMSE.
+Steps:
+ 
+* get list of sites
+* loop through all sites
+* leave a site out
+* build the model with remaining sites
+* predict for that site
+* calculate RMSE for predictions against observations 
+* save site name and RMSE for that site in a data frame
+* summarize mean RMSE over entire leave one out CV and SD of RMSEs
+
+
+```{r}
+
+sites <- spring_meanT %>% distinct(Site) %>% pull(Site)
+
+site.rmse <- tibble()
+
+for(i in sites){
+  test.dat <- spring_meanT %>% filter(Site == i)
+  train.dat <- spring_meanT %>% filter(!Site == i)
+  model <- lm(meanT ~ tair + prcp + elev_mean + cont_area,
+              data = train.dat, na.action = "na.fail")
+  preds <- predict(model, newdata = test.dat)
+  nobs <- nrow(test.dat)
+  rmse <- sqrt(sum(((preds - test.dat$meanT)) ^ 2)/nobs)
+  newrow <- tibble(site = i, rmse = rmse)
+  site.rmse <- bind_rows(site.rmse, newrow)
+}
+
+site.rmse %>% 
+  summarize(mean_rmse = mean(rmse),
+            sd_rmse = sd(rmse))
+
+```
+
+Why are some sites so poorly predicted? Do they have very little data?
+
+It looks like the maximum number of dates in a year ~ 49, which seems low. 
+For Site CIK14, dates are approx. June to late July. Did data get clipped somewhere?
+
+```{r}
+spring_meanT %>% 
+  count(Site, year) %>% 
+  spread(key = year, value = n)
+
+spring_meanT %>% 
+  group_by(year) %>% 
+  summarize(min(sampleDate),
+            max(sampleDate))
+
+```
 
 
 
