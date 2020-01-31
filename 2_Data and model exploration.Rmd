@@ -409,7 +409,6 @@ summ(chosen.modelS, confint = TRUE, digits = 3)
 ## SAVE DATAFRAME for model development
 
 ```{r}
-write.csv(temp, "output/temp_mod.csv")
 save(temp, file = "output/temp.Rdata")
 
 ```
