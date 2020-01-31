@@ -36,6 +36,13 @@ hist(temp$ma_mean)
 hist(temp$tair)
 hist(temp$prcp)
 hist(temp$swe)
+
+summary(temp$sweA1)
+temp %>% 
+  distinct(rca_id, year, sweA1) %>% 
+  arrange(desc(sweA1))
+
+hist(temp$sweA1)
 ```
 
 ### Look at linear model for 2 seasons based on ascending and descending limb of stream temperature and air temperature distribution: see 2_Data and model exploration.Rmd - split is julian day 201.  Will have 2 seasons June 1 - July 20: (152-201) and july 21 - September 30: (202-303)

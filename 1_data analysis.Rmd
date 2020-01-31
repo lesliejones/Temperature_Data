@@ -177,25 +177,50 @@ temp.rca <- temp.rca %>%
 
 ```
 
-Explore if some of the elevation and slope covariates are correlated.
+Get attributes from Dustin's geodatabase: Anchor_LM_Outputs. Same location as other geodb. This db includes the fish species distributions by life stage and the new elevation covariate - mean elevation for the entire contributing area to each rca pour point.
+
+```{r}
+fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/Anchor_LM_Outputs.gdb"
+
+# List all feature classes in a file geodatabase
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+
+# Read the feature class with new attributes
+rca_fish <- sf::st_read(dsn = fgdb, layer = "anchor_rcas_31012020")
+
+#Join new attributes to the temp.rca data frame
+temp.rca <- temp.rca %>% 
+  left_join(rca_fish %>% select(rca_id, K_r:S_p, Mean_Elev_Contributing_Area)) %>% 
+  select(-Shape) %>% 
+  rename(elev_mean_ca = Mean_Elev_Contributing_Area)
+
+```
+
+Create a new elevation covariate that matches what was used by Siegel and Volk - the difference between the mean elevation for the contributing area and the mean elevation for the rca (they used the site elevation, but it should be very comparable). Call this elev_delta and explore if some of the elevation and slope covariates are correlated.
 
 ```{r}
 
+temp.rca <- temp.rca %>% 
+  mutate(elev_delta = elev_mean_ca - elev_mean)
+
 temp.rca %>% 
   distinct(Z_Min, Z_Max, Z_Mean, SLength, Min_Slope, Max_Slope, Avg_Slope, length_m, slope_P, slope_D,
-           elev_mean, elev_max, elev_min, flowacc_max) %>% 
+           elev_mean, elev_max, elev_min, flowacc_max, elev_mean_ca, elev_delta) %>% 
   cor(.) %>% 
   corrplot.mixed(.)
 
 ```
 
-Just keep one mean elevation, slope in percent, and contributing area. Convert flow accumulation to square meters to square kilometers for contributing area. 1 cell = 25 square meters and 1 square kilometer = 1,000,000 square meters.
+For now, keep all three elevation covariates, but may need to drop one later. Also keep slope in percent, and contributing area. Convert flow accumulation to square meters to square kilometers for contributing area. 1 cell = 25 square meters and 1 square kilometer = 1,000,000 square meters.
 
 See email from Leslie on 12-20-19: "use the slope_P (percent) or slope_D (degrees) for the model. Upstream Contributing Area: Maximum flow accumulation value for RCA * multiplied by cell size."
 
 ```{r}
 temp.rca <- temp.rca %>% 
-  select(Site, rca_id, sampleDate, meanT, ma_mean, slope_P, elev_mean, flowacc_max) %>% 
+  select(Site, rca_id, sampleDate, meanT, ma_mean, slope_P, elev_mean, elev_mean_ca, 
+         elev_delta, flowacc_max) %>% 
   mutate(cont_area = flowacc_max * 25 / 1000000)
 ```
 
