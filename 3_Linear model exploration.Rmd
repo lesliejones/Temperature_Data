@@ -1,0 +1,281 @@
+---
+title: "3_Linear model exploration"
+author: "Leslie Jones"
+date: "1/7/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
+
+library(lubridate)
+library(rgdal)
+library(zoo)
+library(sf)
+library(corrplot)
+library(MuMIn)
+library(ape)
+library(readxl)
+# library(VIF)
+library(tidyverse)
+library(jtools)
+library(nlme)
+library(car)
+
+
+load(file = "output/temp.Rdata")
+```
+
+
+###Look at distribution of covariates to include in model
+```{r, ehco=FALSE, warnings = FALSE}
+
+view(temp)
+hist(temp$ma_mean)
+hist(temp$tair)
+hist(temp$prcp)
+hist(temp$swe)
+```
+
+### Look at linear model for 2 seasons based on ascending and descending limb of stream temperature and air temperature distribution: see 2_Data and model exploration.Rmd - split is julian day 201.  Will have 2 seasons June 1 - July 20: (152-201) and july 21 - September 30: (202-303)
+```{r}
+spring <- temp %>%
+  filter(day < 202)
+
+fall <- temp %>% 
+  filter(day > 201)
+
+spring_meanT <- spring %>% 
+  filter(!is.na(meanT))
+
+#first use REML for lme model and aic to compare model with and without random effect for huc12.
+
+full.model <- lm(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + forest + cont_area * elev_mean, 
+                 data = spring_meanT, na.action = "na.fail")
+```
+
+Check VIF for all covariates in full linear model without any random effect. Decided to drop forest and then all remaining covariates have VIF < 3.
+
+```{r}
+full.model.noint <- lm(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + forest, 
+                 data = spring_meanT, na.action = "na.fail")
+
+vif(full.model.noint)
+
+full.model.noint <- lm(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub, 
+                 data = spring_meanT, na.action = "na.fail")
+
+vif(full.model.noint)
+
+full.model.noint <- lm(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + forest, 
+                 data = spring_meanT, na.action = "na.fail")
+
+vif(full.model.noint)
+
+
+```
+
+Compare mixed effects model to linear model to see if random effect is better.
+
+```{r}
+
+full.model <- lm(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + cont_area * elev_mean, 
+                 data = spring_meanT, na.action = "na.fail")
+
+lme1 <- lme(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + cont_area * elev_mean, 
+            random = ~ 1|HUC_name, data = spring_meanT, na.action = "na.fail")
+
+AIC(lme1, full.model)
+
+anova(lme1, full.model)
+```
+
+Mixed effects model much better than model without random effect. Move forward with model selection, but switch to ML.
+
+```{r}
+
+lme2 <- lme(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + cont_area * elev_mean, 
+            random = ~ 1|HUC_name, data = spring_meanT, na.action = "na.fail", method = "ML")
+
+lme2.dredge <- dredge(lme2)
+lme2.dredge
+
+```
+Remove wetland because very very small effect. For a 1deg change in stream temperature requires a 0.01% change in wetland cover. Too small to keep in. Shrub also has a very small effect size and also doesn't make sense, more shrub cover increases stream temperature.
+
+
+```{r}
+lme3 <- lme(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + cont_area * elev_mean, 
+            random = ~ 1|HUC_name, data = spring_meanT, na.action = "na.fail", method = "ML")
+
+lme3.dredge <- dredge(lme3)
+lme3.dredge
+
+```
+
+
+Remove interaction next. Anytime it is present it changes the direction and effect size of slope.
+
+```{r}
+lme4 <- lme(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area, 
+            random = ~ 1|HUC_name, data = spring_meanT, na.action = "na.fail", method = "ML")
+
+lme4.dredge <- dredge(lme4)
+lme4.dredge
+
+```
+
+
+Calculate RMSE for differnt models. Looks like contributing area, air temp, precip, and elevation are the most important.
+
+
+```{r}
+
+chosen.lme <- eval(getCall(lme4.dredge, 1))
+
+cor(predict(chosen.lme), spring_meanT$meanT)
+
+lme4_1.RMSE <- sqrt(sum(((predict(chosen.lme) - spring_meanT$meanT)) ^ 2)/2629)
+
+
+```
+Try for second and third best models in lme4 dredge results. No improvement in RMSE so no justification for keepign swe or reach slope.
+
+```{r}
+chosen.lme <- eval(getCall(lme4.dredge, 2))
+
+cor(predict(chosen.lme), spring_meanT$meanT)
+
+lme4_2.RMSE <- sqrt(sum(((predict(chosen.lme) - spring_meanT$meanT)) ^ 2)/2629)
+lme4_2.RMSE
+
+
+chosen.lme <- eval(getCall(lme4.dredge, 3))
+
+cor(predict(chosen.lme), spring_meanT$meanT)
+
+lme4_3.RMSE <- sqrt(sum(((predict(chosen.lme) - spring_meanT$meanT)) ^ 2)/2629)
+lme4_3.RMSE
+
+```
+
+Try model 5, which removes precipitation from top model.
+
+```{r}
+chosen.lme <- eval(getCall(lme4.dredge, 5))
+chosen.lme
+
+cor(predict(chosen.lme), spring_meanT$meanT)
+
+lme4_5.RMSE <- sqrt(sum(((predict(chosen.lme) - spring_meanT$meanT)) ^ 2)/2629)
+lme4_5.RMSE
+```
+
+Try model 16, which removes rca mean elevation - now just air temp and contributing area.
+
+```{r}
+chosen.lme <- eval(getCall(lme4.dredge, 16))
+chosen.lme
+
+cor(predict(chosen.lme), spring_meanT$meanT)
+
+lme4_16.RMSE <- sqrt(sum(((predict(chosen.lme) - spring_meanT$meanT)) ^ 2)/2629)
+lme4_16.RMSE
+```
+Try model 32, which is just air temperature.... strange that coefficient goes to 1.0.
+
+```{r}
+chosen.lme <- eval(getCall(lme4.dredge, 32))
+chosen.lme
+
+cor(predict(chosen.lme), spring_meanT$meanT)
+
+lme4_32.RMSE <- sqrt(sum(((predict(chosen.lme) - spring_meanT$meanT)) ^ 2)/2629)
+lme4_32.RMSE
+```
+Try model 23, which is air temperature and elevation.
+
+```{r}
+chosen.lme <- eval(getCall(lme4.dredge, 23))
+chosen.lme
+
+cor(predict(chosen.lme), spring_meanT$meanT)
+
+lme4_23.RMSE <- sqrt(sum(((predict(chosen.lme) - spring_meanT$meanT)) ^ 2)/2629)
+lme4_23.RMSE
+```
+
+Check what the parameter estimates are for the random effect - ie how much does each huc shift off of the population level estimates?
+Following instructions in Zuur et al. pg. 108
+
+These seem really strange! the outlet has the warmest temperatures.
+
+```{r}
+lme4 <- lme(meanT ~ tair + cont_area, 
+            random = ~ 1|HUC_name, data = spring_meanT, na.action = "na.fail", method = "ML")
+
+
+ranef(lme4)
+```
+
+The shifts by HUC12 don't make sense so let's start all over with a regular linear model - no random effects - and go through fixed effects.
+
+
+```{r}
+lm1 <- lm(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + cont_area * elev_mean, 
+                 data = spring_meanT, na.action = "na.fail")
+
+lm1.dredge <- lapply(dredge(lm1, evaluate = FALSE), eval)
+
+model.rmse <- function(x) {
+  rmse <- sqrt(sum(((predict(x) - spring_meanT$meanT)) ^ 2)/2629)
+  rmse
+} 
+
+lm1.dredge.rmse <- lapply(lm1.dredge, model.rmse) %>% unlist %>% tibble::enframe(name = "model")
+
+lm1.dredge2 <- dredge(lm1)  
+
+
+lm1.dredge2 <- left_join(dredge(lm1), lm1.dredge.rmse) 
+
+lm1.dredge2 %>% arrange(value)
+
+```
+
+
+
+
+
+
+```{r}
+chosen.model <- lm(ma_mean ~ tair  + month*tair  + slope_P + elev_mean + cont_area + forest + shrub + wetland  , data = temp_mod,
+                na.action = "na.fail")
+
+summary(chosen.model)
+plot(chosen.model)
+summ(chosen.model,confint = TRUE, digits = 3)
+
+#save predicted an residual
+temp_mod$predicted <- predict(chosen.model)
+temp_mod$residuals <- residuals(chosen.model)
+hist(temp_mod$residuals)
+ggplot(data = temp_mod, aes(x= ma_mean, y=predicted, colour=year)) + geom_point()
+ggplot(data = temp_mod, aes(x= ma_mean, y=predicted, colour=Site)) + geom_point()
+
+ggplot(data = temp_mod, aes(x= ma_mean, y=residuals, color=Site)) + geom_point()
+ggplot(data = temp_mod, aes(x= day, y=residuals, group=year, color=year)) + geom_point()+ facet_wrap(~Site)
+ggplot(data = temp_mod, aes(x= day, y=ma_mean, group=year, color=year)) + geom_point()+ facet_wrap(~Site)
+
+#check out high residuals
+resid <- temp_mod %>% filter(residuals > 3)
+ggplot(data = resid, aes(x= ma_mean, y=residuals, color=Site)) + geom_point()
+ggplot(data = resid, aes(x= ma_mean, y=predicted, color=Site)) + geom_point()
+
+#star <- temp_mod %>% filter(Site=='STAR 171 Lower') 
+#ggplot(data=resid, aes(y=ma_mean, x=sampleDate)) + geom_point()
+
+```
+
+
+

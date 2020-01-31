@@ -1,0 +1,29 @@
+---
+title: "4_GAM model exploration"
+author: "Leslie Jones"
+date: "1/7/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
+
+library(lubridate)
+library(rgdal)
+library(zoo)
+library(sf)
+library(corrplot)
+library(MuMIn)
+library(ape)
+library(readxl)
+library(VIF)
+library(tidyverse)
+library(jtools)
+```
+
+
+### Look at GAM model approach
+```{r}
+
+```
+

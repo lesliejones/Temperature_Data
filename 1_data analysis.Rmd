@@ -90,10 +90,10 @@ Plot of mean temps and moving average.
 ```{r}
 
 temp_8day %>% 
-  filter(Site == "APU1") %>% 
+  filter(Site == "CIK8") %>% 
   ggplot() +
-  geom_line(aes(x = date_day5, y = meanT)) +
-  geom_line(aes(x = date_day5, y = ma_mean), color = "red") +
+  geom_line(aes(x = sampleDate, y = meanT)) +
+  geom_line(aes(x = sampleDate-4, y = ma_mean), color = "red") +
   facet_wrap(~Site)
 ```
 
@@ -195,7 +195,7 @@ See email from Leslie on 12-20-19: "use the slope_P (percent) or slope_D (degree
 
 ```{r}
 temp.rca <- temp.rca %>% 
-  select(Site, rca_id, sampleDate, ma_mean, slope_P, elev_mean, flowacc_max) %>% 
+  select(Site, rca_id, sampleDate, meanT, ma_mean, slope_P, elev_mean, flowacc_max) %>% 
   mutate(cont_area = flowacc_max * 25 / 1000000)
 ```
 
@@ -310,9 +310,6 @@ temp.dm %>%
   facet_wrap(~Site) 
 
 ```
-
-
-
 
 ## Merge LST data to data frame
 

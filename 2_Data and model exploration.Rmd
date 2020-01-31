@@ -64,12 +64,49 @@ temp.dm3 <- temp.dm2 %>%
   left_join(forests %>% select(rca_id, forest), by = "rca_id") %>% mutate(forest = replace_na(forest, 0))
 
 #join shrub percentages
-temp.dm <- temp.dm3 %>% 
+temp.dm4 <- temp.dm3 %>% 
   left_join(shrubs %>% select(rca_id, shrub), by = "rca_id") %>% mutate(shrub = replace_na(shrub, 0))
 
 summary(temp.dm)
 
+#merge HUC12s so that can test random effect to account for spatial autocorrelation
+huc <- read.csv(file = "Data/anchor_tempsites_huc12.csv", header = TRUE, sep = ",")
+huc2 <- huc %>% mutate(HUC_name=Name) %>%  select(rca_id, HUC12, HUC_name) %>% distinct(rca_id, .keep_all = TRUE) 
+
+
+head(huc2)
+
+temp.dm5 <- temp.dm4 %>% left_join(huc2, by="rca_id") %>% mutate(sampyear=year(sampleDate))
+CIK3 <- filter(temp.dm5, Site=="CIK3")
+
+head(temp.dm5)
+
+
 ```
+#merge May 1st swe from Daymet
+```{r}
+
+fgdb <- "W:/GIS/KFHP/Geodatabase/anchor_DAYMET.gdb"
+
+# List all feature classes in a file geodatabase
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+
+# Read the feature class
+#swe <- sf::st_read(dsn = fgdb, layer = "swe_anchor_all")
+
+swe2 <- swe %>% 
+  mutate(date = as.Date(date), sampyear= year(date), month = month(date), day=day(date), sweM1=swe) %>% 
+ filter(month==5) %>% filter(day==1) %>% select(rca_id, sweM1, sampyear) 
+
+temp.dm <- temp.dm5 %>% left_join(swe2, by= c("rca_id", "sampyear"))
+
+
+head(temp.dm)
+
+```
+
 
 ### Correlation between LST and air temperature by month
 ```{r, echo=FALSE, warnings = FALSE}
@@ -109,8 +146,6 @@ temp.dm %>%
 
 ```
 ###plot air temperature and stream temperature by month
-
-
 
 ```{r, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE}
 temp.dm %>% 
@@ -158,9 +193,6 @@ month5 <- filter(temp.dm,month==5)
 
 ```
 
-
-
-
 #Remove temperatures less than 0 and calculate temperature index (waterT-airT)/waterT. index approaches 0 then air and stream temp are most similar.
  
 ```{r, echo=FALSE, warnings = FALSE}
@@ -200,22 +232,16 @@ ggplot() + geom_point (data=temp, aes(x = day, y = index, color=year)) +
      facet_wrap(~Site)
 ```
 
-###Look at distribution of covariates to include in model
-```{r, ehco=FALSE, warnings = FALSE}
-hist(temp$ma_mean)
-hist(temp$tair)
-hist(temp$prcp)
-hist(temp$swe)
-```
-###plot time-series to see seasonal split
 
+###plot time-series to see seasonal split
+Identify median value of Maximum stream temperature and air temperature to locate apex of ascending and descending limb and seasonal break in model. Stream temp = 201 and air temp = 205. Choose July 20 (julian day = 201) as split. Will have 2 seasons June 1 - July 20: (152-201) and july 21 - September 30: (202-303)
 
 ```{r}
 
 sites <- temp %>% distinct(Site) %>% pull(Site)
 # i <- sites[14]
 
-pdf("Plots of temperature by year and site.pdf", width = 12, height = 8, units = "in")
+#pdf("Plots of temperature by year and site.pdf", width = 12, height = 8, units = "in")
 
 for(i in sites) {
   dat <- temp %>% filter(Site == i)
@@ -229,7 +255,7 @@ for(i in sites) {
 
 dev.off()
 
-
+#get median julian day for max ma_mean
 max_ma_mean <- temp %>% 
   filter(month %in% 6:8) %>% 
   group_by(Site, year) %>% 
@@ -244,7 +270,24 @@ temp %>%
   summarize(mean(day),
             sd(day))
 
+#get median julian day for air temperature
+max_tair <- temp %>% 
+  filter(month %in% 6:8) %>% 
+  group_by(Site, year) %>% 
+  summarize(max_tair = max(tair, na.rm = TRUE),
+            number_of_days = n()) %>% 
+  filter(number_of_days > 71)
+
+max_tair
+
+temp %>% 
+  right_join(max_tair) %>% 
+  summarize(mean(day),
+            sd(day))
+
 ```
+
+
 
 ### Modeling
 
@@ -254,11 +297,11 @@ Try out sets of models.
 
 corrplot.mixed(cor(temp %>% select(ma_mean, tair, prcp, swe, slope_P, elev_mean, cont_area, wetland, forest, shrub)))
 
-#model1 <- lm(ma_mean ~ tair, data=temp.dm)
-#model2 <- lm(ma_mean ~ tair + elev_mean, data=temp.dm)
-#model3 <- lm(ma_mean ~ tair + elev_mean + slope_P, data=temp.dm)
-#model4 <- lm(ma_mean ~ tair + elev_mean + slope_P + cont_area, data=temp.dm)
-#model5 <- lm(ma_mean ~ tair + elev_mean + slope_P + cont_area + prcp, data=temp.dm)
+#model1 <- lm(ma_mean ~ tair, data=temp.mod)
+#model2 <- lm(ma_mean ~ tair + elev_mean, data=temp.mod)
+#model3 <- lm(ma_mean ~ tair + elev_mean + slope_P, data=temp.mod)
+#model4 <- lm(ma_mean ~ tair + elev_mean + slope_P + cont_area, data=temp.mod)
+#model5 <- lm(ma_mean ~ tair + elev_mean + slope_P + cont_area + prcp, data=temp.mod)
 #AIC(model1, model2, model3, model4, model5)
 
 #make month a factor
@@ -355,4 +398,13 @@ chosen.modelS <- lm(ma_mean ~ tair + slope_P + elev_mean + cont_area + forest + 
                 na.action = "na.fail")
 summary(chosen.modelS)
 summ(chosen.modelS, confint = TRUE, digits = 3)
+```
+
+
+## SAVE DATAFRAME for model development
+
+```{r}
+write.csv(temp, "output/temp_mod.csv")
+save(temp, file = "output/temp.Rdata")
+
 ```
