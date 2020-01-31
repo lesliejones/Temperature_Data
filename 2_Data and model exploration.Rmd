@@ -72,8 +72,6 @@ summary(temp.dm)
 #merge HUC12s so that can test random effect to account for spatial autocorrelation
 huc <- read.csv(file = "Data/anchor_tempsites_huc12.csv", header = TRUE, sep = ",")
 huc2 <- huc %>% mutate(HUC_name=Name) %>%  select(rca_id, HUC12, HUC_name) %>% distinct(rca_id, .keep_all = TRUE) 
-
-
 head(huc2)
 
 temp.dm5 <- temp.dm4 %>% left_join(huc2, by="rca_id") %>% mutate(sampyear=year(sampleDate))
@@ -100,10 +98,17 @@ swe2 <- swe %>%
   mutate(date = as.Date(date), sampyear= year(date), month = month(date), day=day(date), sweM1=swe) %>% 
  filter(month==5) %>% filter(day==1) %>% select(rca_id, sweM1, sampyear) 
 
-temp.dm <- temp.dm5 %>% left_join(swe2, by= c("rca_id", "sampyear"))
+temp.dm6 <- temp.dm5 %>% left_join(swe2, by= c("rca_id", "sampyear"))
 
+head(temp.dm6)
 
-head(temp.dm)
+#Add April 1 swe
+library(readr)
+sweA1 <- read_csv("Data/sweA1_anchor.csv")
+View(sweA1)
+sweA2 <- sweA1 %>% mutate(date = as.Date(date), sampyear= year(date)) %>% select(rca_id, sweA1, sampyear)
+
+temp.dm <- temp.dm6 %>% left_join(sweA2, by=c("rca_id", "sampyear"))
 
 ```
 
