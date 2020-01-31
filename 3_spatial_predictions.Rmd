@@ -1,0 +1,96 @@
+---
+title: "3_spatial_predictions"
+author: "Becky"
+date: "1/9/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(sf)
+library(tidyverse)
+```
+
+# Predictions data frame
+
+Read in spatial covariates associated with each RCA. These are stored in three separate feature classes.
+
+```{r}
+fgdb <- "W:/GIS/KFHP/Geodatabase/Anchor.gdb"
+
+# List all feature classes in a file geodatabase
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+
+# Read the feature class
+rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches")
+
+rcas <- sf::st_read(dsn = fgdb, layer = "anchor_rcas")
+
+contarea <- sf::st_read(dsn = fgdb, layer = "rca_cont_area")
+
+```
+
+Convert each to a data frame and join. 
+
+```{r}
+rca_reach_df <- rca_reach %>% 
+  select(reachid:slope_D) %>% 
+  st_drop_geometry()
+
+rcas_df <- rcas %>% 
+  select(rca_id:elev_max) %>% 
+  st_drop_geometry()
+
+contarea_df <- contarea %>% 
+  select(rca_id, flowacc_max) %>% 
+  st_drop_geometry()
+
+rca_vars <- full_join(rcas_df, contarea_df)
+
+rca_vars <- full_join(rca_vars, rca_reach_df, by = c("rca_id" = "reachid"))
+```
+
+Create a second data frame of spatial covariates with just the three variables we used for modeling: mean elevation, slope in percent, and contributing area.
+
+```{r}
+rca_vars2 <- rca_vars %>% 
+  select(rca_id, slope_P, elev_mean, flowacc_max) %>% 
+  mutate(cont_area = flowacc_max * 25 / 1000000)
+
+```
+
+Read in daymet data.
+
+```{r}
+
+fgdb <- "W:/GIS/KFHP/Geodatabase/anchor_DAYMET.gdb"
+
+# List all feature classes in a file geodatabase
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+
+# Read the feature class
+daymet <- sf::st_read(dsn = fgdb, layer = "anchor_daymet")
+
+daymet <- daymet %>% 
+  mutate(date = as.Date(date)) %>% 
+  select(-Field1)
+
+daymet %>% 
+  group_by(year(date)) %>% 
+  summarize(min(date), max(date))
+
+```
+
+Join spatial covariates to daymet data frame.
+
+```{r}
+preds <- left_join(daymet, rca_vars2)
+
+```
+
+

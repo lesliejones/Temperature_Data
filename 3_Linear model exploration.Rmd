@@ -18,9 +18,10 @@ library(ape)
 library(readxl)
 # library(VIF)
 library(tidyverse)
-library(jtools)
+# library(jtools)
 library(nlme)
 library(car)
+library(corrplot)
 
 
 load(file = "output/temp.Rdata")
@@ -75,6 +76,19 @@ vif(full.model.noint)
 
 
 ```
+
+Pairplot of covariates.
+
+```{r}
+
+spring_meanT %>% 
+  distinct(sweM1, slope_P, elev_mean, cont_area, wetland, shrub) %>% 
+  cor %>% 
+  corrplot.mixed(.)
+
+```
+
+
 
 Compare mixed effects model to linear model to see if random effect is better.
 
