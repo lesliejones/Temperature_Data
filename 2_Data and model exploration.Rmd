@@ -16,9 +16,9 @@ library(corrplot)
 library(MuMIn)
 library(ape)
 library(readxl)
-library(VIF)
+#library(VIF)
 library(tidyverse)
-library(jtools)
+#library(jtools)
 ```
 
 ## Database for Anchor Model
@@ -81,7 +81,9 @@ head(temp.dm5)
 
 
 ```
+
 #merge May 1st swe from Daymet
+
 ```{r}
 
 fgdb <- "W:/GIS/KFHP/Geodatabase/anchor_DAYMET.gdb"

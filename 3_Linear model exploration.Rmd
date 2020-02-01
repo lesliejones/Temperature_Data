@@ -22,9 +22,12 @@ library(tidyverse)
 library(nlme)
 library(car)
 library(corrplot)
+library(mgcv)
 
 
 load(file = "output/temp.Rdata")
+load(file = "output/tempMS.Rdata")
+
 ```
 
 
@@ -57,10 +60,12 @@ fall <- temp %>%
 spring_meanT <- spring %>% 
   filter(!is.na(meanT))
 
-#first use REML for lme model and aic to compare model with and without random effect for huc12.
+fall_meanT <- fall %>% 
+  filter(!is.na(meanT))
 
-full.model <- lm(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + forest + cont_area * elev_mean, 
-                 data = spring_meanT, na.action = "na.fail")
+temp_meanT <- temp %>% 
+  filter(!is.na(meanT))
+
 ```
 
 Check VIF for all covariates in full linear model without any random effect. Decided to drop forest and then all remaining covariates have VIF < 3.
@@ -95,11 +100,11 @@ spring_meanT %>%
 
 ```
 
-
-
 Compare mixed effects model to linear model to see if random effect is better.
 
 ```{r}
+
+
 
 full.model <- lm(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + cont_area * elev_mean, 
                  data = spring_meanT, na.action = "na.fail")
@@ -120,8 +125,18 @@ lme2 <- lme(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetl
             random = ~ 1|HUC_name, data = spring_meanT, na.action = "na.fail", method = "ML")
 
 
+model.rmse.spring <- function(x) {
+  rmse <- sqrt(sum(((predict(x) - spring_meanT$meanT)) ^ 2)/3453)
+  rmse
+} 
+
+model.rmse.fall <- function(x) {
+  rmse <- sqrt(sum(((predict(x) - fall_meanT$meanT)) ^ 2)/4411)
+  rmse
+} 
+
 model.rmse <- function(x) {
-  rmse <- sqrt(sum(((predict(x) - spring_meanT$meanT)) ^ 2)/2629)
+  rmse <- sqrt(sum(((predict(x) - temp_meanT$meanT)) ^ 2)/7040)
   rmse
 } 
 
@@ -163,16 +178,73 @@ ranef(lme4)
 
 The shifts by HUC12 don't make sense so let's start all over with a regular linear model - no random effects - and go through fixed effects.
 
+Compare spring and fall models. Also check pairwise correlations and VIF for predictors for deciding on global models.
+
+Start with spring correlations. The difference in elevation between rca and contributing area has high correlation with a couple of covariates so just keep the mean elevations for each spatial scale (Siegel had said that differencing removed the multicollinearity, but not in this case). Shade is strongly negatively correlate to wetlands, which is interesting because it may mean those two effects can't be disentangled.
 
 ```{r}
-lm1 <- lm(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + cont_area * elev_mean, 
-                 data = spring_meanT, na.action = "na.fail")
+spring_meanT %>%
+  mutate(shade = shrub + forest) %>% 
+  distinct(sweA1, slope_P, elev_mean, elev_mean_ca, elev_delta, cont_area, 
+           wetland, shrub, forest, shade, meanT) %>% 
+  cor %>% 
+  corrplot.mixed(.)
+
+temp %>% 
+  distinct(rca_id, elev_mean, elev_mean_ca) %>% 
+  arrange(elev_mean)
+```
+
+Drop shade because so strongly inversely correlated to wetland, which is a more important driver for the anchor. Drop elev_delta because it is pretty strongly correlated to cont_area.
+
+```{r}
+lm1 <- lm(meanT ~ tair + sweA1 + prcp + slope_P + elev_mean + cont_area + wetland, data = spring_meanT, na.action = "na.fail")
+
+vif(lm1)
+
+lm1.dredge <- dredge(lm1, extra = c(model.rmse.spring))  
+
+write.csv(lm1.dredge, "output/global spring dredge.csv")
 
 
-lm1.dredge <- dredge(lm1, extra = c(model.rmse))  
-lm1.dredge
+```
+
+Compare the spring to the fall model to see if the split is needed.
+
+```{r}
+
+lm2 <- lm(meanT ~ tair + sweA1 + prcp + slope_P + elev_mean + cont_area + wetland, data = fall_meanT, na.action = "na.fail")
+
+vif(lm2)
+
+lm2.dredge <- dredge(lm2, extra = c(model.rmse.fall))
+write.csv(lm2.dredge, "output/global fall dredge.csv")
+
+```
+
+Try a combined model for June - Sept.
+
+```{r}
+
+lm3 <- lm(meanT ~ tair + sweA1 + prcp + slope_P + elev_mean + cont_area + wetland, data = temp_meanT, na.action = "na.fail")
+
+vif(lm3)
+
+lm3.dredge <- dredge(lm3, extra = c(model.rmse))
+write.csv(lm3.dredge, "output/global dredge spring and fall.csv")
+
+```
 
 
+What years can we leave out for testing temporal predictions?
+
+```{r}
+temp %>% 
+  count(Site, year) %>% 
+  spread(key = year, value = n)
+
+temp %>% 
+  count(Site)
 ```
 
 
@@ -206,6 +278,8 @@ for(i in sites){
   newrow <- tibble(site = i, rmse = rmse)
   site.rmse <- bind_rows(site.rmse, newrow)
 }
+
+site.rmse
 
 site.rmse %>% 
   summarize(mean_rmse = mean(rmse),
