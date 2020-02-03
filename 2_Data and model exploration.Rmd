@@ -34,7 +34,7 @@ load(file = "output/temp.dm")
 temp.dm1 <- filter(temp.dm, month > 4)
 
 #Pulling nlcd data summaries from Dustin off T:drive and joining to existing temperature database
-fgdb <- "T:/Aquatic/KFHP/Geodatabases/Anchor.gdb"
+fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/Anchor.gdb"
 
 # List all feature classes in a file geodatabase
 subset(ogrDrivers(), grepl("GDB", name))
@@ -86,7 +86,7 @@ head(temp.dm5)
 
 ```{r}
 
-fgdb <- "W:/GIS/KFHP/Geodatabase/anchor_DAYMET.gdb"
+fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_DAYMET.gdb"
 
 # List all feature classes in a file geodatabase
 subset(ogrDrivers(), grepl("GDB", name))
@@ -107,7 +107,6 @@ head(temp.dm6)
 #Add April 1 swe
 library(readr)
 sweA1 <- read_csv("Data/sweA1_anchor.csv")
-View(sweA1)
 sweA2 <- sweA1 %>% mutate(date = as.Date(date), sampyear= year(date)) %>% select(rca_id, sweA1, sampyear)
 
 temp.dm <- temp.dm6 %>% left_join(sweA2, by=c("rca_id", "sampyear"))

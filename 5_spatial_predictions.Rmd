@@ -1,6 +1,6 @@
 ---
-title: "3_spatial_predictions"
-author: "Becky"
+title: "5_spatial_predictions"
+author: "Leslie"
 date: "1/9/2020"
 output: html_document
 ---
@@ -19,7 +19,30 @@ library(lubridate)
 Read in spatial covariates associated with each RCA. These are stored in three separate feature classes.
 
 ```{r}
-fgdb <- "W:/GIS/KFHP/Geodatabase/Anchor.gdb"
+fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/Anchor_LM_Outputs.gdb"
+
+# List all feature classes in a file geodatabase
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+
+rca_all2 <- sf::st_read(dsn = fgdb, layer = "anchor_rcas_31012020")
+
+#Select attributes and rename for consistency with model
+rca_all <- rca_all2 %>%  select(-Shape) %>% 
+   rename(elev_mean_ca = Mean_Elev_Contributing_Area) %>% rename (elev_mean=MEAN) %>% rename(flowacc =     
+    Flow_Accumulation) %>%  mutate(cont_area = flowacc * 25 / 1000000) %>% 
+  select(rca_id, K_r, K_s, K_p, CH_r, CH_p, CH_s, CO_r, CO_s, CO_p, P_r, P_s, P_p, S_r, S_s, S_p, elev_mean, elev_mean_ca, cont_area, flowacc) 
+
+rca_all <- data.frame(rca_all)
+
+
+```
+
+#add slope_P
+```{r}
+
+fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/Anchor.gdb"
 
 # List all feature classes in a file geodatabase
 subset(ogrDrivers(), grepl("GDB", name))
@@ -29,117 +52,56 @@ print(fc_list)
 # Read the feature class
 rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches")
 
-rcas <- sf::st_read(dsn = fgdb, layer = "anchor_rcas")
+reach <- rca_reach %>% select(reachid, slope_P, SLength, Z_Mean)
 
+pred <- rca_all %>% left_join(reach, by = c("rca_id" = "reachid")) 
+ 
+
+```
+
+compare old flowmax to Dustin's
+```{r}
 contarea <- sf::st_read(dsn = fgdb, layer = "rca_cont_area")
 
+flow <- contarea %>% select(rca_id, flowacc_max)
+
+pred2 <- pred %>% left_join(flow, by = "rca_id") %>%  mutate(cont_area2 = flowacc_max * 25 / 1000000) %>% mutate(diff= cont_area2-cont_area) %>% select(rca_id, cont_area, cont_area2, flowacc_max, flowacc, diff)
 ```
 
-Convert each to a data frame and join. 
-
+#Filter salmon rcas only. This is the dataframe that we will predict on.Look at distribution of covariates that will predict over compared to rcas used in model parameterization.
 ```{r}
-rca_reach_df <- rca_reach %>% 
-  select(reachid:slope_D) %>% 
-  st_drop_geometry()
+salmon_rcas <- pred %>% mutate(salmon = K_p + CH_p + P_p + CO_p + S_p) %>% filter(salmon > 0) 
+nrow(salmon_rcas)
 
-rcas_df <- rcas %>% 
-  select(rca_id:elev_max) %>% 
-  st_drop_geometry()
+cov <- salmon_rcas %>% select(rca_id, elev_mean, elev_mean_ca, cont_area, slope_P)
+summary(cov)
 
-contarea_df <- contarea %>% 
-  select(rca_id, flowacc_max) %>% 
-  st_drop_geometry()
-
-rca_vars <- full_join(rcas_df, contarea_df)
-
-rca_vars <- full_join(rca_vars, rca_reach_df, by = c("rca_id" = "reachid"))
-```
-Join AWC rca id's
-
-```{r}
-
-# Import Chinook rca's and prepare for join
-chinook <- sf::st_read(dsn = fgdb, layer = "anch_chinook_rca")
-  chinook_df <- chinook %>% select(rca_id, SPECIES_NA, LSTAGE, LIFE_STAGE) %>% st_drop_geometry() %>% add_column(chinook=1) %>% rename(chinook_LS = LIFE_STAGE) %>% select(-c(SPECIES_NA, LSTAGE))
-head(chinook_df)
-
-# Import Coho rca's and prepare for join
-coho <- sf::st_read(dsn = fgdb, layer = "anch_coho_rca")
-  coho_df <- coho %>% select(rca_id, SPECIES_NA, LSTAGE, LIFE_STAGE) %>% st_drop_geometry() %>% add_column(coho=1) %>% rename(coho_LS = LIFE_STAGE) %>% select(-c(SPECIES_NA, LSTAGE))
-head(coho_df)
-
-# Import sockeye rca's and prepare for join
-sockeye <- sf::st_read(dsn = fgdb, layer = "anch_sockeye_rca")
-  sockeye_df <- sockeye %>% select(rca_id, SPECIES_NA, LSTAGE, LIFE_STAGE) %>% st_drop_geometry() %>% add_column(sockeye=1) %>% rename(sockeye_LS = LIFE_STAGE) %>% select(-c(SPECIES_NA, LSTAGE))
-head(sockeye_df)
-
-# Import chum rca's and prepare for join
-chum <- sf::st_read(dsn = fgdb, layer = "anch_chum_rca")
-  chum_df <- chum %>% select(rca_id, SPECIES_NA, LSTAGE, LIFE_STAGE) %>% st_drop_geometry() %>% add_column(chum=1) %>% rename(chum_LS = LIFE_STAGE) %>% select(-c(SPECIES_NA, LSTAGE))
-head(chum_df)
-
-# Import pink rca's and prepare for join
-pink <- sf::st_read(dsn = fgdb, layer = "anch_pink_rca")
-  pink_df <- pink %>% select(rca_id, SPECIES_NA, LSTAGE, LIFE_STAGE) %>% st_drop_geometry() %>% add_column(pink=1) %>% rename(pink_LS = LIFE_STAGE) %>% select(-c(SPECIES_NA, LSTAGE))
-head(pink_df)
-
-# Import all salmon rca's and prepare for join
-salmon <- sf::st_read(dsn = fgdb, layer = "anch_salmon_rca")
-  salmon_df <- salmon %>% select(rca_id, SPECIES_NA, LSTAGE, LIFE_STAGE) %>% st_drop_geometry() %>% add_column(salmon=1) %>% rename(salmon_LS = LIFE_STAGE) %>% select(-c(SPECIES_NA, LSTAGE))
-head(salmon_df)
-summary(salmon_df)
-dim(salmon_df)
- 
-```
-
-Create a second data frame of spatial covariates with just the three variables we used for modeling: mean elevation, slope in percent, and contributing area.
-
-```{r}
-rca_vars2 <- rca_vars %>% 
-  select(rca_id, slope_P, elev_mean, flowacc_max) %>% 
-  mutate(cont_area = flowacc_max * 25 / 1000000)
-
+hist(salmon_rcas$elev_mean_ca)
+hist(salmon_rcas$elev_mean)
+hist(salmon_rcas$slope_P)
+hist(salmon_rcas$cont_area)
 ```
 
 Read in daymet data.
 
 ```{r}
 
-fgdb <- "W:/GIS/KFHP/Geodatabase/anchor_DAYMET.gdb"
+#fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_DAYMET.gdb"
 
 # List all feature classes in a file geodatabase
-subset(ogrDrivers(), grepl("GDB", name))
-fc_list <- ogrListLayers(fgdb)
-print(fc_list)
+#subset(ogrDrivers(), grepl("GDB", name))
+#fc_list <- ogrListLayers(fgdb)
+#print(fc_list)
 
 # Read the feature class
-daymet <- sf::st_read(dsn = fgdb, layer = "anchor_daymet")
+#daymet <- sf::st_read(dsn = fgdb, layer = "anchor_daymet")
 
-daymet <- daymet %>% 
-  mutate(date = as.Date(date)) %>% 
-  select(-Field1)
-
-daymet %>% 
-  group_by(year(date)) %>% 
-  summarize(min(date), max(date))
+daymet_pred <- daymet %>% 
+  mutate(date = as.Date(date), year= year(date), month = month(date), day=day(date)) 
 
 ```
 
-Join spatial covariates to daymet data frame.
-
-```{r}
-preds <- left_join(daymet, rca_vars2)
-
-preds2 <- full_join(preds,chinook_df, by='rca_id')
-preds3 <- full_join(preds2,sockeye_df, by='rca_id')
-preds4 <- full_join(preds3,chum_df, by='rca_id')
-preds5 <- full_join(preds4,pink_df, by='rca_id')
-preds6 <- full_join(preds5,salmon_df, by='rca_id')
-preds7 <- full_join(preds6,coho_df, by='rca_id')
-
-head(preds7)
 
 
-```
 
 
