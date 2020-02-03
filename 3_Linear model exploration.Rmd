@@ -52,10 +52,10 @@ hist(temp$sweA1)
 
 ```{r}
 spring <- temp %>%
-  filter(day < 202)
+  filter(day < 202, !Site == "APU1", !HUC_name == "Stariski Creek")
 
 fall <- temp %>% 
-  filter(day > 201)
+  filter(day > 201, !Site == "APU1", !HUC_name == "Stariski Creek")
 
 spring_meanT <- spring %>% 
   filter(!is.na(meanT))
@@ -103,8 +103,6 @@ spring_meanT %>%
 Compare mixed effects model to linear model to see if random effect is better.
 
 ```{r}
-
-
 
 full.model <- lm(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + cont_area * elev_mean, 
                  data = spring_meanT, na.action = "na.fail")
@@ -206,6 +204,7 @@ lm1.dredge <- dredge(lm1, extra = c(model.rmse.spring))
 
 write.csv(lm1.dredge, "output/global spring dredge.csv")
 
+lm1.dredge
 
 ```
 
@@ -236,7 +235,7 @@ write.csv(lm3.dredge, "output/global dredge spring and fall.csv")
 ```
 
 
-What years can we leave out for testing temporal predictions?
+What years can we leave out for testing temporal predictions? Decided to do a leave-one-out cross-validation on years and sites.
 
 ```{r}
 temp %>% 
@@ -247,6 +246,29 @@ temp %>%
   count(Site)
 ```
 
+
+For spring, start with air temperature, contributing area, and slope. Compare that model to one with each other variable added: sweA1, elevation, precipitation, and wetlands.
+
+After first round of adding single variables, swe data improved the simple model by ~ 0.5 degrees. Add other variables to that model.
+
+```{r}
+
+spring.model.list <- list(meanT ~ tair + cont_area + slope_P,
+                          meanT ~ tair + cont_area + slope_P + sweA1,
+                          meanT ~ tair + cont_area + slope_P + elev_mean,
+                          meanT ~ tair + cont_area + slope_P + prcp,
+                          meanT ~ tair + cont_area + slope_P + wetland,
+                          meanT ~ tair + cont_area + slope_P + swe,
+                          meanT ~ tair + cont_area + slope_P + swe + elev_mean,
+                          meanT ~ tair + cont_area + slope_P + swe + prcp,
+                          meanT ~ tair + cont_area + slope_P + swe + wetland,
+                          meanT ~ tair + cont_area + slope_P + elev_mean + prcp + sweA1 + day + day*sweA1)
+
+names(spring.model.list) <- c("simple", "simple_sweA1", "simple_elev", "simple_precip", "simple_wetland",
+                              "simple_swe", "simple_swe_elev", "simple_swe_precip", "simple_swe_wetland",
+                              "simple_dxsweA1")
+
+```
 
 Leave one out cross-validation and RMSE.
 Steps:
@@ -266,26 +288,210 @@ Steps:
 sites <- spring_meanT %>% distinct(Site) %>% pull(Site)
 
 site.rmse <- tibble()
+site.preds <- tibble()
 
 for(i in sites){
   test.dat <- spring_meanT %>% filter(Site == i)
   train.dat <- spring_meanT %>% filter(!Site == i)
-  model <- lm(meanT ~ tair + prcp + elev_mean + cont_area,
-              data = train.dat, na.action = "na.fail")
-  preds <- predict(model, newdata = test.dat)
+  models <- lapply(spring.model.list, function(x) lm(x, data = train.dat, na.action = "na.fail"))
+  preds <- lapply(models, function(x) predict(x, newdata = test.dat))
+  
+  pred.dat <- tibble::enframe(unlist(preds), name = "model", value = "preds") %>% 
+    mutate(model = gsub("\\..*","", model))
+  test.dat.reps <- do.call("bind_rows", replicate(length(spring.model.list), 
+                                 test.dat %>% select(Site, sampleDate, meanT), simplify = FALSE))
+  pred.rows <- bind_cols(pred.dat, test.dat.reps)
+  site.preds <- bind_rows(site.preds, pred.rows)
+  
   nobs <- nrow(test.dat)
-  rmse <- sqrt(sum(((preds - test.dat$meanT)) ^ 2)/nobs)
-  newrow <- tibble(site = i, rmse = rmse)
-  site.rmse <- bind_rows(site.rmse, newrow)
+  rmse <- lapply(preds, function(x) sqrt(sum(((x - test.dat$meanT)) ^ 2)/nobs))
+  newrows <- tibble::enframe(unlist(rmse), name = "model", value = "rmse") %>% 
+    mutate(site = i)
+  site.rmse <- bind_rows(site.rmse, newrows)
 }
+
+
+
 
 site.rmse
 
 site.rmse %>% 
+  group_by(model) %>% 
   summarize(mean_rmse = mean(rmse),
             sd_rmse = sd(rmse))
 
+site.rmse %>% 
+  group_by(site) %>% 
+  summarize(mean_rmse = mean(rmse),
+            sd_rmse = sd(rmse)) %>% 
+  arrange(desc(mean_rmse))
+
+site.preds %>% 
+  ggplot(aes(x = meanT, y = preds)) + 
+  geom_point(shape = 1) +
+  facet_wrap(~Site) +
+  geom_abline(slope = 1, intercept = 0)
 ```
+
+Temporal cross-validation with spring models.
+
+```{r}
+
+years <- spring_meanT %>% distinct(sampyear) %>% pull(sampyear)
+
+year.rmse <- tibble()
+
+for(i in years){
+  test.dat <- spring_meanT %>% filter(sampyear == i)
+  train.dat <- spring_meanT %>% filter(!sampyear == i)
+  models <- lapply(spring.model.list, function(x) lm(x, data = train.dat, na.action = "na.fail"))
+  preds <- lapply(models, function(x) predict(x, newdata = test.dat))
+  nobs <- nrow(test.dat)
+  rmse <- lapply(preds, function(x) sqrt(sum(((x - test.dat$meanT)) ^ 2)/nobs))
+  newrows <- tibble::enframe(unlist(rmse), name = "model", value = "rmse") %>% 
+    mutate(year = i)
+  year.rmse <- bind_rows(year.rmse, newrows)
+}
+
+year.rmse
+
+year.rmse %>% 
+  group_by(model) %>% 
+  summarize(mean_rmse = mean(rmse),
+            sd_rmse = sd(rmse))
+
+year.rmse %>% 
+  group_by(year) %>% 
+  summarize(mean_rmse = mean(rmse),
+            sd_rmse = sd(rmse)) %>% 
+  arrange(desc(mean_rmse))
+
+year.swe.comp <- year.rmse %>% 
+  group_by(year) %>% 
+  summarize(mean_rmse = mean(rmse))
+
+left_join(spring_meanT %>%
+            group_by(sampyear) %>%
+            summarize(mean_sweA1 = mean(sweA1)) %>% 
+            rename(year = sampyear), year.swe.comp) %>% 
+  ggplot(aes(x = mean_sweA1, y = mean_rmse)) +
+  geom_point()
+
+```
+
+Best spring model.
+
+```{r}
+
+spring.lm <- lm(meanT ~ tair + cont_area + slope_P + swe + prcp, data = spring_meanT)
+
+summary(spring.lm)
+
+```
+
+
+
+Cross validation rmse for fall models. Start with air temperature, contributing area, elevation, and slope. Compare that model to one with each other variable added: sweA1, precipitation, and wetlands.
+
+After first round, adding in SWE improved model RMSE by 0.3 degrees. Take that model and add in precip and wetlands to see if further improvement is possible.
+
+```{r}
+
+fall.model.list <- list(meanT ~ tair + cont_area + slope_P + elev_mean,
+                        meanT ~ tair + cont_area + slope_P + elev_mean + sweA1,
+                        meanT ~ tair + cont_area + slope_P + elev_mean + prcp,
+                        meanT ~ tair + cont_area + slope_P + elev_mean + wetland,
+                        meanT ~ tair + cont_area + slope_P + elev_mean + swe,
+                        meanT ~ tair + cont_area + slope_P + elev_mean + sweA1 + prcp,
+                        meanT ~ tair + cont_area + slope_P + elev_mean + sweA1 + wetland,
+                        meanT ~ tair + cont_area + slope_P + elev_mean + sweA1 + day + day*sweA1)
+
+names(fall.model.list) <- c("simple", "simple_sweA1", "simple_precip", "simple_wetland", "simple_swe",
+                            "simple_sweA1_precip", "simple_sweA1_wetland", "simple_dxsweA1")
+
+```
+
+Spatial cross-validation of fall models.
+
+```{r}
+
+sites <- fall_meanT %>% distinct(Site) %>% pull(Site)
+
+site.rmse.fall <- tibble()
+
+for(i in sites){
+  test.dat <- fall_meanT %>% filter(Site == i)
+  train.dat <- fall_meanT %>% filter(!Site == i)
+  models <- lapply(fall.model.list, function(x) lm(x, data = train.dat, na.action = "na.fail"))
+  preds <- lapply(models, function(x) predict(x, newdata = test.dat))
+  nobs <- nrow(test.dat)
+  rmse <- lapply(preds, function(x) sqrt(sum(((x - test.dat$meanT)) ^ 2)/nobs))
+  newrows <- tibble::enframe(unlist(rmse), name = "model", value = "rmse") %>% 
+    mutate(site = i)
+  site.rmse.fall <- bind_rows(site.rmse.fall, newrows)
+}
+
+site.rmse.fall
+
+site.rmse.fall %>% 
+  group_by(model) %>% 
+  summarize(mean_rmse = mean(rmse),
+            sd_rmse = sd(rmse))
+
+site.rmse.fall %>% 
+  group_by(site) %>% 
+  summarize(mean_rmse = mean(rmse),
+            sd_rmse = sd(rmse)) %>% 
+  arrange(desc(mean_rmse))
+```
+
+Temporal cross-validation with fall models.
+
+```{r}
+
+years <- fall_meanT %>% distinct(sampyear) %>% pull(sampyear)
+
+year.rmse.fall <- tibble()
+
+for(i in years){
+  test.dat <- fall_meanT %>% filter(sampyear == i)
+  train.dat <- fall_meanT %>% filter(!sampyear == i)
+  models <- lapply(fall.model.list, function(x) lm(x, data = train.dat, na.action = "na.fail"))
+  preds <- lapply(models, function(x) predict(x, newdata = test.dat))
+  nobs <- nrow(test.dat)
+  rmse <- lapply(preds, function(x) sqrt(sum(((x - test.dat$meanT)) ^ 2)/nobs))
+  newrows <- tibble::enframe(unlist(rmse), name = "model", value = "rmse") %>% 
+    mutate(year = i)
+  year.rmse.fall <- bind_rows(year.rmse.fall, newrows)
+}
+
+year.rmse.fall
+
+year.rmse.fall %>% 
+  group_by(model) %>% 
+  summarize(mean_rmse = mean(rmse),
+            sd_rmse = sd(rmse))
+
+year.rmse.fall %>% 
+  group_by(year) %>% 
+  summarize(mean_rmse = mean(rmse),
+            sd_rmse = sd(rmse)) %>% 
+  arrange(desc(mean_rmse))
+```
+
+
+Fall best model - meanT ~ tair + cont_area + slope_P + elev_mean + sweA1 + prcp. Look to see if parameter coefficients make sense now that Stariski is dropped.
+
+```{r}
+
+fall.lm <- lm(meanT ~ tair + cont_area + slope_P + elev_mean + sweA1 + prcp, data = fall_meanT)
+
+summary(fall.lm)
+
+```
+
+
+
 
 Why are some sites so poorly predicted? Do they have very little data?
 
