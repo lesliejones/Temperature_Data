@@ -112,7 +112,7 @@ sweA2 <- sweA1 %>% mutate(date = as.Date(date), sampyear= year(date)) %>% select
 temp.dm <- temp.dm6 %>% left_join(sweA2, by=c("rca_id", "sampyear"))
 
 ```
-
+#merge new flow accumulation and elevation covariate that Dustin has calculated.
 
 ### Correlation between LST and air temperature by month
 ```{r, echo=FALSE, warnings = FALSE}
