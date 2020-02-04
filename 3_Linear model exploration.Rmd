@@ -23,6 +23,7 @@ library(nlme)
 library(car)
 library(corrplot)
 library(mgcv)
+library(visreg)
 
 
 load(file = "output/temp.Rdata")
@@ -30,8 +31,8 @@ load(file = "output/tempMS.Rdata")
 
 ```
 
+# Explore covariates to include in model
 
-###Look at distribution of covariates to include in model.
 ```{r, ehco=FALSE, warnings = FALSE}
 #climate covariates
 hist(temp$ma_mean)
@@ -57,7 +58,7 @@ summary(temp_rca)
 #hist(temp$sweA1)
 ```
 
-### Look at linear model for 2 seasons based on ascending and descending limb of stream temperature and air temperature distribution: see 2_Data and model exploration.Rmd - split is julian day 201.  Will have 2 seasons June 1 - July 20: (152-201) and july 21 - September 30: (202-303)
+Look at linear model for 2 seasons based on ascending and descending limb of stream temperature and air temperature distribution: see 2_Data and model exploration.Rmd - split is julian day 201.  Will have 2 seasons June 1 - July 20: (152-201) and july 21 - September 30: (202-303)
 
 ```{r}
 spring <- temp %>%
@@ -73,14 +74,36 @@ fall_meanT <- fall %>%
   filter(!is.na(meanT))
 
 temp_meanT <- temp %>% 
-  filter(!is.na(meanT))
+  filter(!is.na(meanT), !Site == "APU1", !HUC_name == "Stariski Creek")
 
 ```
+
+RMSE functions by data frame.
+
+```{r}
+
+model.rmse.spring <- function(x) {
+  rmse <- sqrt((sum((predict(x) - spring_meanT$meanT) ^ 2))/nrow(spring_meanT))
+  rmse
+} 
+
+model.rmse.fall <- function(x) {
+  rmse <- sqrt((sum((predict(x) - fall_meanT$meanT) ^ 2))/nrow(fall_meanT))
+  rmse
+} 
+
+model.rmse <- function(x) {
+  rmse <- sqrt((sum((predict(x) - temp_meanT$meanT) ^ 2))/nrow(temp_meanT))
+  rmse
+} 
+
+```
+
 
 Check VIF for all covariates in full linear model without any random effect. Decided to drop forest and then all remaining covariates have VIF < 3.
 
 ```{r}
-full.model.noint <- lm(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + forest, 
+full.model.noint <- lm(meanT ~ tair + sweM1 + swe + prcp + slope_P + elev_mean + cont_area + wetland + shrub + forest, 
                  data = spring_meanT, na.action = "na.fail")
 
 vif(full.model.noint)
@@ -103,11 +126,18 @@ Pairplot of covariates.
 ```{r}
 
 spring_meanT %>% 
-  distinct(sweM1, slope_P, elev_mean, cont_area, wetland, shrub) %>% 
+  select(swe, prcp, sweM1, slope_P, elev_mean, cont_area, wetland, shrub) %>% 
   cor %>% 
   corrplot.mixed(.)
 
+spring_meanT %>% 
+  ggplot(aes(x = swe, y = prcp)) + 
+  geom_point()
+
+
 ```
+
+# Spatial model with HUC12 random effect versus simple fixed effects model
 
 Compare mixed effects model to linear model to see if random effect is better.
 
@@ -131,21 +161,6 @@ Mixed effects model much better than model without random effect. Move forward w
 lme2 <- lme(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + cont_area * elev_mean, 
             random = ~ 1|HUC_name, data = spring_meanT, na.action = "na.fail", method = "ML")
 
-
-model.rmse.spring <- function(x) {
-  rmse <- sqrt(sum(((predict(x) - spring_meanT$meanT)) ^ 2)/3453)
-  rmse
-} 
-
-model.rmse.fall <- function(x) {
-  rmse <- sqrt(sum(((predict(x) - fall_meanT$meanT)) ^ 2)/4411)
-  rmse
-} 
-
-model.rmse <- function(x) {
-  rmse <- sqrt(sum(((predict(x) - temp_meanT$meanT)) ^ 2)/7040)
-  rmse
-} 
 
 lme2.dredge <- dredge(lme2, extra = c(model.rmse))
 lme2.dredge %>% kable
@@ -182,6 +197,8 @@ lme4 <- lme(meanT ~ tair + cont_area,
 
 ranef(lme4)
 ```
+
+# Linear models for spring and fall
 
 The shifts by HUC12 don't make sense so let's start all over with a regular linear model - no random effects - and go through fixed effects.
 
@@ -243,6 +260,7 @@ write.csv(lm3.dredge, "output/global dredge spring and fall.csv")
 
 ```
 
+# Spatial and temporal cross-validations of seasonal linear models
 
 What years can we leave out for testing temporal predictions? Decided to do a leave-one-out cross-validation on years and sites.
 
@@ -392,13 +410,35 @@ Best spring model.
 
 ```{r}
 
-spring.lm <- lm(meanT ~ tair + cont_area + slope_P + swe + prcp, data = spring_meanT)
+spring.lm <- lm(meanT ~ tair + slope_P + cont_area +  prcp + swe, data = spring_meanT)
 
 summary(spring.lm)
 
+sqrt(sum(((predict(spring.lm) - spring_meanT$meanT) ^ 2))/2235)
+
+
 ```
 
+spring global model. What is significant?
 
+```{r}
+spring.lm <- lm(meanT ~ tair + slope_P + elev_mean + cont_area +  prcp + swe + sweA1 + wetland, data = spring_meanT)
+summary(spring.lm)
+sqrt(sum(((predict(spring.lm) - spring_meanT$meanT) ^ 2))/2235)
+
+spring.lm <- lm(meanT ~ tair + slope_P + elev_mean + cont_area +  prcp + swe + sweA1, data = spring_meanT)
+sqrt(sum(((predict(spring.lm) - spring_meanT$meanT) ^ 2))/2235)
+summary(spring.lm)
+
+spring.lm <- lm(meanT ~ tair + slope_P + elev_mean + cont_area +  prcp + sweA1, data = spring_meanT)
+sqrt(sum(((predict(spring.lm) - spring_meanT$meanT) ^ 2))/2235)
+summary(spring.lm)
+
+spring.lm <- lm(meanT ~ tair + slope_P + cont_area +  prcp + sweA1, data = spring_meanT)
+sqrt(sum(((predict(spring.lm) - spring_meanT$meanT) ^ 2))/2235)
+summary(spring.lm)
+
+```
 
 Cross validation rmse for fall models. Start with air temperature, contributing area, elevation, and slope. Compare that model to one with each other variable added: sweA1, precipitation, and wetlands.
 
@@ -552,4 +592,92 @@ ggplot(data = resid, aes(x= ma_mean, y=predicted, color=Site)) + geom_point()
 ```
 
 
+# GAM models
+
+Started by examining code used by Siegel and Volk in their paper and available on github.
+
+https://github.com/SouthForkResearch/TemperatureModels_Predictive/blob/master/Model_fitting_ALL_1.R
+
+Here is the code they used for spring and fall gam v. linear models:
+
+```{r}
+
+# m1gs <- (gam(AvgDailyTemp ~ s(TAVGn5dC, k = 4) +s(Tchange5C, k = 3)+s(A1Snow,by = JulianDate, k = 3)+s(catch_area, by = ae, k = 3)+s(catch_area, by = TAVGn5dC, k = 3)+s(catch_area, by = dailymeanCMS, k = 3)+s(ae, by = JulianDate, k = 3)+s(SLOPE, by = TAVGn5dC, k = 3)+s(Lake_perc, by = JulianDate, k = 3)+s(BFI, by = TAVGn5dC, k = 3)+ s(dailymeanCMS, by = TAVGn5dC, k = 3) + s(JulianDate, by = TAVGn5dC, k = 5)+ s(Echange2, by = TAVGn5dC, k = 3)+s(for_cover, by = TAVGn5dC, k = 3), data = data.day.sp))
+# summary(m1gs)
+# 
+# #Spring linear
+# m1gsL <- (lm(AvgDailyTemp ~ TAVGn5dC+Tchange5C+A1Snow*JulianDate+catch_area*ae+catch_area*TAVGn5dC+catch_area*dailymeanCMS+ae*JulianDate+SLOPE*TAVGn5dC+Lake_perc*JulianDate+dailymeanCMS*TAVGn5dC+JulianDate*TAVGn5dC+Echange2*TAVGn5dC+for_cover*TAVGn5dC, data = data.day.sp))
+# summary(m1gsL)
+# #fall model
+# m1gf <- (gam(AvgDailyTemp ~ s(TAVGn3dC, k = 5) +s(Tchange3C, k = 3)+s(SNWD,by = TAVGn3dC, k = 3)+s(catch_area, by = ae, k = 3)+s(catch_area, by = dailymeanCMS, k = 3)+s(ae, by = SNWD, k = 3)+s(catch_area, by = TAVGn3dC, k = 3)+s(ae, by = TAVGn3dC, k = 3)+s(Lake_perc, by = JulianDate, k = 3)+ s(dailymeanCMS, by = TAVGn3dC, k = 3)+ s(BFI, by = TAVGn3dC, k = 3)+ s(Echange2, by = TAVGn3dC, k = 3)+ s(JulianDate, k = 5), data = data.day.fl))
+# summary(m1gf)
+# 
+# m1gfL <- (lm(AvgDailyTemp ~ TAVGn3dC+Tchange3C+SNWD*TAVGn3dC+A1Snow*JulianDate+catch_area*ae+catch_area*TAVGn3dC+catch_area*dailymeanCMS+ae*JulianDate+ae*SNWD+SLOPE*TAVGn3dC+BFI*TAVGn3dC+Lake_perc*JulianDate+dailymeanCMS*TAVGn3dC+JulianDate*TAVGn3dC+Echange2*TAVGn3dC, data = data.day.fl))
+# summary(m1gfL)
+
+```
+
+Try adding gam smoothers to the spring linear model that performed best. The main problem with this model is that we are seeing improved prediction with swe, but the effect size is in the wrong direction (+).
+
+```{r}
+
+spring.gam <- gam(meanT ~ s(tair, k = 3) + s(slope_P, k = 3) + s(cont_area, k = 3) +  s(prcp, k = 3) 
+                  + s(swe, k = 3), data = spring_meanT)
+
+summary(spring.gam)
+
+sqrt(sum(((predict(spring.gam) - spring_meanT$meanT) ^ 2))/nrow(spring_meanT))
+
+plot(spring.gam)
+  
+
+```
+
+Compare to linear model.
+
+
+```{r}
+
+spring.lm <- lm(meanT ~ tair + slope_P + cont_area +  prcp + swe, data = spring_meanT)
+
+summary(spring.lm)
+
+sqrt(sum(((predict(spring.lm) - spring_meanT$meanT) ^ 2))/nrow(spring_meanT))
+
+visreg(spring.lm, "tair")
+visreg(spring.lm, "slope_P")
+visreg(spring.lm, "cont_area")
+visreg(spring.lm, "swe")
+visreg(spring.lm, "prcp")
+
+spring.resid <- lm(meanT ~ tair, data = spring_meanT) %>% resid
+plot(spring_meanT$slope_P, spring.resid)
+plot(spring_meanT$cont_area, spring.resid)
+plot(spring_meanT$prcp, spring.resid)
+plot(spring_meanT$swe, spring.resid)
+
+```
+
+Try a gam for the entire season.
+
+```{r}
+all.gam <- gam(meanT ~ s(tair, k = 5) + s(slope_P, k = 3) + s(cont_area, k = 3) +  s(prcp, k = 3) 
+                  + s(sweA1, k = 3), data = temp_meanT)
+
+summary(all.gam)
+
+sqrt((sum((predict(all.gam) - temp_meanT$meanT) ^ 2))/nrow(temp_meanT))
+
+plot(all.gam)
+visreg(all.gam, "tair")
+
+
+all.gam <- gam(meanT ~ s(tair, k = 5) + s(slope_P, k = 3) + s(cont_area, k = 3) + s(elev_mean, k = 3), data = temp_meanT)
+
+summary(all.gam)
+
+sqrt(sum(((predict(all.gam) - temp_meanT$meanT) ^ 2))/6049)
+
+
+```
 

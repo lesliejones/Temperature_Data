@@ -1,5 +1,5 @@
 ---
-title: "1_data analysis"
+title: "1_Create model data frame"
 author: "Becky"
 date: "10/31/2019"
 output: html_document
@@ -21,7 +21,7 @@ library(readxl)
 library(tidyverse)
 ```
 
-
+Merging all of the spatial and temporal covariates to the stream temperature data.
 
 # Anchor Data
 
@@ -139,6 +139,8 @@ temp.rca <- temp.rca %>%
 Read in covariates associated with the reaches and RCAs in the geodatabase. Note that the reachid and the rcaids are the same.
 
 Leslie updated the contributing area for each RCA by doing a negative buffer so we weren't grabbing cells of confluences (1/6/20). Use the rca_cont_area feature class to get the correct information for this attribute.
+
+Dustin updated all of the spatial covariates in the geodb: Anchor_LM_Outputs. Read them in from there.
 
 ```{r}
 
