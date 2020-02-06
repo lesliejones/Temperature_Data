@@ -97,7 +97,7 @@ Read in daymet data.
 #daymet <- sf::st_read(dsn = fgdb, layer = "anchor_daymet")
 
 daymet_pred <- daymet %>% 
-  mutate(date = as.Date(date), year= year(date), month = month(date), day=day(date)) 
+  mutate(date = as.Date(date), year= year(date), month = month(date), day=day(date)) %>% left_join(salmon_rcas, by="rca_id")
 
 ```
 

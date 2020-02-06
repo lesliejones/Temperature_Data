@@ -115,7 +115,7 @@ Remove April
 temp.dm1 <- filter(temp.dm, month > 4)
 
 ```
-
+#merge new flow accumulation and elevation covariate that Dustin has calculated.
 
 
 ## Exploratory Graphs
@@ -317,10 +317,12 @@ summary(chosen.modelS)
 summ(chosen.modelS, confint = TRUE, digits = 3)
 ```
 
-
 ## SAVE DATAFRAME for model development
 
 ```{r}
 save(temp, file = "output/temp.Rdata")
 
 ```
+
+
+
