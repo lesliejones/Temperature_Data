@@ -21,98 +21,104 @@ library(tidyverse)
 #library(jtools)
 ```
 
-## Database for Anchor Model
-Load data frame from 1_data analysis.Rmd
-I calculated percent wetland, forest, and shrub riparian cover in GIS by buffering stream by 30m, converted nlcd raster to polygon, used select function to save individual polygon layers of wetland, forest, and shrub. Used Tabulate intersection function to get tables by rca_id or percent overlap and then joined tables to rca shapefile.
-The covariates are joined individually to the anchor dataframe here. Code also replaces NA with 0 for all 3 covariates.Remove month of April.
+# Database for Anchor Model
+Load data frame from 1_Creat model data frame.Rmd
 
 ```{r}
-#load temperature database from 1_data analysis.Rmd
-load(file = "output/temp.dm")
+load(file = "output/temp.dm.Rdata")
+
+```
+
+
+## Compare LST versus daymet air temperatures
+
+See correlation between lst and daymet.
+Test models of stream temp with each.
+
+```{r}
+
+cor(temp.dm$lst2, temp.dm$tair, use = "pairwise.complete.obs")
+
+temp.dm %>% 
+  ggplot() +
+  geom_point(aes(x = tair, y = lst2)) +
+  geom_abline(slope = 1, intercept = 0) +
+  scale_x_continuous(limits = c(0, 25)) +
+  scale_y_continuous(limits = c(0, 25)) +
+  facet_wrap(~month)
+
+
+```
+
+plot LST versus stream temperature.
+
+```{r}
+temp.dm %>% 
+  ggplot() +
+  geom_point(aes(x = lst2, y = ma_mean, color = as.factor(month))) +
+  facet_wrap(~Site) 
+
+```
+
+
+
+```{r}
+temp.dm %>% 
+  filter(!is.na(LST)) %>% 
+  summarize(clm = cor(lst2, ma_mean),
+            cam = cor(tair, ma_mean))
+
+
+lm1 <- lm(ma_mean ~ tair, data = temp.dm %>% filter(!is.na(LST)))
+lm2 <- lm(ma_mean ~ lst2, data = temp.dm %>% filter(!is.na(LST)))
+AIC(lm1, lm2)
+
+```
+
+
+
+## Explore correlations between the covariates
+
+```{r}
+temp.rca %>% 
+  distinct(reach_slope, reach_length, rca_elev_min, rca_elev_max, rca_elev_mn, ca_elev_mn, cont_area) %>% 
+  cor(.) %>% 
+  corrplot.mixed(.)
+```
+
+
+For now, keep all three elevation covariates, but may need to drop one later. Also keep slope in percent, and contributing area. Convert flow accumulation to square meters to square kilometers for contributing area. 1 cell = 25 square meters and 1 square kilometer = 1,000,000 square meters.
+
+See email from Leslie on 12-20-19: "use the slope_P (percent) or slope_D (degrees) for the model. Upstream Contributing Area: Maximum flow accumulation value for RCA * multiplied by cell size."
+
+```{r}
+temp.rca <- temp.rca %>% 
+  select(Site, rca_id, sampleDate, meanT, ma_mean, slope_P, elev_mean, elev_mean_ca, 
+         elev_delta, flowacc_max) %>% 
+  mutate(cont_area = flowacc_max * 25 / 1000000)
+```
+
+Double check. Great! Maximum flow accumulation near the mouth is 580 km2 and HUC10 is 585.
+
+```{r}
+temp.rca %>% 
+  distinct(cont_area, rca_id, Site) %>% 
+  arrange(desc(cont_area))
+```
+
+
+Remove April
+
+```{r}
 
 #remove April
 temp.dm1 <- filter(temp.dm, month > 4)
 
-#Pulling nlcd data summaries from Dustin off T:drive and joining to existing temperature database
-fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/Anchor.gdb"
-
-# List all feature classes in a file geodatabase
-subset(ogrDrivers(), grepl("GDB", name))
-fc_list <- ogrListLayers(fgdb)
-print(fc_list)
-
-# Read the feature class
-nlcd <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_NLCD_Tab_Int")
-
-forests <- nlcd %>% 
-   filter(Land_Cover_Reclass=='Forest') %>% group_by(reachid) %>% summarize(forest= sum(PERCENTAGE)) %>% mutate(rca_id=reachid)
-
-shrubs <-  nlcd %>% 
-   filter(Land_Cover_Reclass=='Shrub') %>% group_by(reachid) %>% summarize(shrub= sum(PERCENTAGE)) %>% mutate(rca_id=reachid)
-
-wetlands <-  nlcd %>% 
-   filter(Land_Cover_Reclass=='Wetlands') %>% group_by(reachid) %>% summarize(wetland= sum(PERCENTAGE)) %>% mutate(rca_id=reachid)
-
-#join wetland percentages
-temp.dm2 <- temp.dm1 %>% 
-  left_join(wetlands, select(rca_id, wetland), by = "rca_id") %>% mutate(wetland = replace_na(wetland, 0))
-
-summary(temp.dm2)
-
-#join forest percentages
-temp.dm3 <- temp.dm2 %>% 
-  left_join(forests %>% select(rca_id, forest), by = "rca_id") %>% mutate(forest = replace_na(forest, 0))
-
-#join shrub percentages
-temp.dm4 <- temp.dm3 %>% 
-  left_join(shrubs %>% select(rca_id, shrub), by = "rca_id") %>% mutate(shrub = replace_na(shrub, 0))
-
-summary(temp.dm)
-
-#merge HUC12s so that can test random effect to account for spatial autocorrelation
-huc <- read.csv(file = "Data/anchor_tempsites_huc12.csv", header = TRUE, sep = ",")
-huc2 <- huc %>% mutate(HUC_name=Name) %>%  select(rca_id, HUC12, HUC_name) %>% distinct(rca_id, .keep_all = TRUE) 
-head(huc2)
-
-temp.dm5 <- temp.dm4 %>% left_join(huc2, by="rca_id") %>% mutate(sampyear=year(sampleDate))
-CIK3 <- filter(temp.dm5, Site=="CIK3")
-
-head(temp.dm5)
-
-
 ```
 
-#merge May 1st swe from Daymet
 
-```{r}
 
-fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_DAYMET.gdb"
-
-# List all feature classes in a file geodatabase
-subset(ogrDrivers(), grepl("GDB", name))
-fc_list <- ogrListLayers(fgdb)
-print(fc_list)
-
-# Read the feature class
-#swe <- sf::st_read(dsn = fgdb, layer = "swe_anchor_all")
-
-swe2 <- swe %>% 
-  mutate(date = as.Date(date), sampyear= year(date), month = month(date), day=day(date), sweM1=swe) %>% 
- filter(month==5) %>% filter(day==1) %>% select(rca_id, sweM1, sampyear) 
-
-temp.dm6 <- temp.dm5 %>% left_join(swe2, by= c("rca_id", "sampyear"))
-
-head(temp.dm6)
-
-#Add April 1 swe
-library(readr)
-sweA1 <- read_csv("Data/sweA1_anchor.csv")
-sweA2 <- sweA1 %>% mutate(date = as.Date(date), sampyear= year(date)) %>% select(rca_id, sweA1, sampyear)
-
-temp.dm <- temp.dm6 %>% left_join(sweA2, by=c("rca_id", "sampyear"))
-
-```
-
+## Exploratory Graphs
 
 ### Correlation between LST and air temperature by month
 ```{r, echo=FALSE, warnings = FALSE}
@@ -121,14 +127,14 @@ temp.dm %>%
   summarise(cor = cor(lst2, tair, use = "pairwise.complete.obs"))
 ```
 
-###correlation between stream temp and air temperature by month
+### correlation between stream temp and air temperature by month
 ```{r, echo=FALSE, warnings = FALSE}
 temp.dm %>%
   group_by(month) %>%
   summarise(cor = cor(ma_mean, tair ))
 ```
 
-###correlation and plot between stream temp and LST by month
+### correlation and plot between stream temp and LST by month
 ```{r, echo=FALSE, warnings = FALSE}
 temp.dm %>%
   group_by(month) %>%
@@ -140,7 +146,7 @@ temp.dm %>%
   facet_wrap(~Site) 
 ```
 
-###plot air temperature and LST by month
+### plot air temperature and LST by month
 ```{r, echo=FALSE, warnings = FALSE}
 temp.dm %>% 
   ggplot() +
@@ -151,7 +157,7 @@ temp.dm %>%
   facet_wrap(~month)
 
 ```
-###plot air temperature and stream temperature by month
+### plot air temperature and stream temperature by month
 
 ```{r, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE}
 temp.dm %>% 
@@ -199,103 +205,8 @@ month5 <- filter(temp.dm,month==5)
 
 ```
 
-#Remove temperatures less than 0 and calculate temperature index (waterT-airT)/waterT. index approaches 0 then air and stream temp are most similar.
- 
-```{r, echo=FALSE, warnings = FALSE}
-#filter temps less than 2
-temp <- temp.dm %>% filter(ma_mean > 0) %>% mutate(index=(ma_mean-tair)/ma_mean)
 
-ggplot() + geom_point (data=temp, aes(x = day, y = index, color=year)) +
-     facet_wrap(~Site, scales="free_y") 
-
-month5b <- filter(temp,month==5) 
-ggplot() + geom_point (data=month5b, aes(x = day, y = index, color=year)) +
-     facet_wrap(~Site, scale="free_y") 
-
-month6b <- filter(temp,month==6) 
-ggplot() + geom_point (data=month6b, aes(x = day, y = index, color=year)) +
-     facet_wrap(~Site, scales="free_y") 
-
-month7b <- filter(temp,month==7) 
-ggplot() + geom_point (data=month7b, aes(x = day, y = index, color=year)) +
-     facet_wrap(~Site, scales="free_y") 
-
-month8b <- filter(temp,month==8) 
-ggplot() + geom_point (data=month8b, aes(x = day, y = index, color=year)) +
-     facet_wrap(~Site, scales="free_y") 
-
-month9b <- filter(temp,month==9) 
-ggplot() + geom_point (data=month9b, aes(x = day, y = index, color=year)) +
-     facet_wrap(~Site, scales="free_y") 
-
-
-
-```
-###Remove all data prior to June 1 (Julian Day 152) and replot index
-```{r, warnings = FALSE, echo=FALSE}
-temp <- temp %>% filter(day > 152) 
-ggplot() + geom_point (data=temp, aes(x = day, y = index, color=year)) +
-     facet_wrap(~Site)
-```
-
-
-###plot time-series to see seasonal split
-Identify median value of Maximum stream temperature and air temperature to locate apex of ascending and descending limb and seasonal break in model. Stream temp = 201 and air temp = 205. Choose July 20 (julian day = 201) as split. Will have 2 seasons June 1 - July 20: (152-201) and july 21 - September 30: (202-303)
-
-```{r}
-
-sites <- temp %>% distinct(Site) %>% pull(Site)
-# i <- sites[14]
-
-#pdf("Plots of temperature by year and site.pdf", width = 12, height = 8, units = "in")
-
-for(i in sites) {
-  dat <- temp %>% filter(Site == i)
-  sitename <- dat %>% distinct(Site) %>% pull(Site)
-  p <- ggplot(data = dat, aes(x = day, y = ma_mean)) +
-    geom_line() +
-    facet_wrap(~year) +
-    labs(main = sitename)
-  print(p)
-}
-
-dev.off()
-
-#get median julian day for max ma_mean
-max_ma_mean <- temp %>% 
-  filter(month %in% 6:8) %>% 
-  group_by(Site, year) %>% 
-  summarize(ma_mean = max(ma_mean, na.rm = TRUE),
-            number_of_days = n()) %>% 
-  filter(number_of_days > 71)
-
-max_ma_mean
-
-temp %>% 
-  right_join(max_ma_mean) %>% 
-  summarize(mean(day),
-            sd(day))
-
-#get median julian day for air temperature
-max_tair <- temp %>% 
-  filter(month %in% 6:8) %>% 
-  group_by(Site, year) %>% 
-  summarize(max_tair = max(tair, na.rm = TRUE),
-            number_of_days = n()) %>% 
-  filter(number_of_days > 71)
-
-max_tair
-
-temp %>% 
-  right_join(max_tair) %>% 
-  summarize(mean(day),
-            sd(day))
-
-```
-
-
-
-### Modeling
+## Exploratory Modeling
 
 Try out sets of models.
 
@@ -347,7 +258,7 @@ ggplot(data = resid, aes(x= ma_mean, y=predicted, color=Site)) + geom_point()
 
 
 ```
-###Investigate model by month to see how coefficients behave
+### Investigate model by month to see how coefficients behave
 June Model
 ```{r}
 June <- temp %>% filter(month==6)
@@ -361,7 +272,7 @@ chosen.modelJ <- lm(ma_mean ~ tair + slope_P + elev_mean + cont_area + forest + 
 summary(chosen.modelJ)
 summ(chosen.modelJ,confint = TRUE, digits = 3)
 ```
-###Investigate model by month to see how coefficients behave
+### Investigate model by month to see how coefficients behave
 July Model
 ```{r}
 July <- temp %>% filter(month==7)
@@ -376,7 +287,7 @@ summary(chosen.modelJY)
 summ(chosen.modelJY, confint = TRUE, digits = 3)
 ```
 
-###Investigate model by month to see how coefficients behave
+### Investigate model by month to see how coefficients behave
 August Model
 ```{r}
 August <- temp %>% filter(month==8)
@@ -391,7 +302,7 @@ summary(chosen.modelA)
 summ(chosen.modelA, confint = TRUE, digits = 3)
 ```
 
-###Investigate model by month to see how coefficients behave
+### Investigate model by month to see how coefficients behave
 September Model
 ```{r}
 Sept <- temp %>% filter(month==9)

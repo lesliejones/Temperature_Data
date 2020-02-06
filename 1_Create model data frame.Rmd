@@ -77,7 +77,7 @@ temp_8day <- temp %>%
 
 ```
 
-Are their missing data in temp_8day? Only for meanT, ma_mean is all filled in. When we are filling in dates and accepting moving averages with 5 or more measurements, we are extending the data series out by three days beyond the last measurement. We can delete these or accept them. For now, leave them in.
+Are there missing data in temp_8day? Only for meanT, ma_mean is all filled in. When we are filling in dates and accepting moving averages with 5 or more measurements, we are extending the data series out by three days beyond the last measurement. We can delete these or accept them. For now, leave them in.
 
 ```{r}
 summary(temp_8day)
@@ -98,7 +98,7 @@ temp_8day %>%
 ```
 
 
-## Merge RCA ids and attributes to stream temperature data frame
+## Merge RCA ids to stream temperature data frame
 
 RCA site ids can be used to filter the climate data actually needed for modeling.
 
@@ -106,7 +106,7 @@ Shifted a few sites so that they fell within the correct RCA (3 sites below the 
 
 Note: the original accs_siteids applied to the KBR data weren't brought in because I had to go back to the raw data to figure out what was going on (site locations). So, create a join field that includes the contact_siteid for the KBR sites only. (contact id 2)
 
-Also note: Some of the KBR data was not in the Anchor River watershed so they won't have rca_ids. Probably the easiest way to remove these will be when merges are made in the data analysis report (e.g. !is.na(rca_id).
+Also note: Some of the KBR data was not in the Anchor River watershed so they won't have rca_ids. Remove these below.
 
 ```{r}
 
@@ -136,11 +136,12 @@ temp.rca <- temp.rca %>%
   filter(!rca_id == 0)
 ```
 
+
+## Merge rca and reach attributes to data frame
+
 Read in covariates associated with the reaches and RCAs in the geodatabase. Note that the reachid and the rcaids are the same.
 
-Leslie updated the contributing area for each RCA by doing a negative buffer so we weren't grabbing cells of confluences (1/6/20). Use the rca_cont_area feature class to get the correct information for this attribute.
-
-Dustin updated all of the spatial covariates in the geodb: Anchor_LM_Outputs. Read them in from there.
+Everything should now be in two feature classes - one for rcas and one for reaches. The only data not quite there yet are the nlcd summaries so for now summarize from Dustin's table.
 
 ```{r}
 
@@ -154,92 +155,68 @@ print(fc_list)
 # Read the feature class
 rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches")
 
-rcas <- sf::st_read(dsn = fgdb, layer = "anchor_rcas")
-
-contarea <- sf::st_read(dsn = fgdb, layer = "rca_cont_area")
+rcas <- sf::st_read(dsn = fgdb, layer = "anch_rca")
 
 ```
 
-Merge attributes for all to the new data frame. Use the flowacc_max value in the rca_cont_area feature class and then convert to square kilometers. (The cont_area is the flow accumulation multiplied by 5, when it should be 25.)
+Merge attributes for all to the new data frame. Use the flowacc value and convert to square kilometers. (The cont_area is the flow accumulation multiplied by 25 and converted from square meters to square kilometers.)
 
 ```{r}
 
 temp.rca <- temp.rca %>% 
-  left_join(rca_reach %>% select(reachid:slope_D), by = c("rca_id" = "reachid")) %>% 
+  left_join(rca_reach %>% select(reachid, reach_slope, reach_length), by = c("rca_id" = "reachid")) %>% 
   select(-Shape)
 
 temp.rca <- temp.rca %>% 
-  left_join(rcas %>% select(rca_id:elev_max), by = c("rca_id" = "rca_id")) %>% 
-  select(-Shape)
-
-temp.rca <- temp.rca %>% 
-  left_join(contarea %>% select(rca_id, flowacc_max), by = c("rca_id" = "rca_id")) %>% 
-  select(-Shape)
-
-
-```
-
-Get attributes from Dustin's geodatabase: Anchor_LM_Outputs. Same location as other geodb. This db includes the fish species distributions by life stage and the new elevation covariate - mean elevation for the entire contributing area to each rca pour point.
-
-```{r}
-fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/Anchor_LM_Outputs.gdb"
-
-# List all feature classes in a file geodatabase
-subset(ogrDrivers(), grepl("GDB", name))
-fc_list <- ogrListLayers(fgdb)
-print(fc_list)
-
-# Read the feature class with new attributes
-rca_fish <- sf::st_read(dsn = fgdb, layer = "anchor_rcas_31012020")
-
-#Join new attributes to the temp.rca data frame
-temp.rca <- temp.rca %>% 
-  left_join(rca_fish %>% select(rca_id, K_r:S_p, Mean_Elev_Contributing_Area)) %>% 
+  left_join(rcas %>% select(rca_id:S_p, HUC_name:ca_elev_mn)) %>% 
   select(-Shape) %>% 
-  rename(elev_mean_ca = Mean_Elev_Contributing_Area)
+  mutate(cont_area = flowacc * 25 / 1000000)
 
 ```
 
-Create a new elevation covariate that matches what was used by Siegel and Volk - the difference between the mean elevation for the contributing area and the mean elevation for the rca (they used the site elevation, but it should be very comparable). Call this elev_delta and explore if some of the elevation and slope covariates are correlated.
+Create a new elevation covariate that matches what was used by Siegel and Volk - the difference between the mean elevation for the contributing area and the mean elevation for the rca (they used the site elevation, but it should be very comparable). 
 
 ```{r}
 
 temp.rca <- temp.rca %>% 
-  mutate(elev_delta = elev_mean_ca - elev_mean)
-
-temp.rca %>% 
-  distinct(Z_Min, Z_Max, Z_Mean, SLength, Min_Slope, Max_Slope, Avg_Slope, length_m, slope_P, slope_D,
-           elev_mean, elev_max, elev_min, flowacc_max, elev_mean_ca, elev_delta) %>% 
-  cor(.) %>% 
-  corrplot.mixed(.)
+  mutate(elev_delta = ca_elev_mn - rca_elev_mn)
 
 ```
 
-For now, keep all three elevation covariates, but may need to drop one later. Also keep slope in percent, and contributing area. Convert flow accumulation to square meters to square kilometers for contributing area. 1 cell = 25 square meters and 1 square kilometer = 1,000,000 square meters.
+Read in the NLCD attributes - percent forest, wetland, and shrub in the riparian buffer of each reach. Dustin is working on getting these attributes on the reaches feature class, so later these can be read in there.
 
-See email from Leslie on 12-20-19: "use the slope_P (percent) or slope_D (degrees) for the model. Upstream Contributing Area: Maximum flow accumulation value for RCA * multiplied by cell size."
+I calculated percent wetland, forest, and shrub riparian cover in GIS by buffering stream by 30m, converted nlcd raster to polygon, used select function to save individual polygon layers of wetland, forest, and shrub. Used Tabulate intersection function to get tables by rca_id or percent overlap and then joined tables to rca shapefile.
+The covariates are joined individually to the anchor dataframe here. Code also replaces NA with 0 for all 3 covariates.
 
 ```{r}
+
+nlcd <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_NLCD_Tab_Int")
+
+buffer_summs <- nlcd %>% 
+  filter(Land_Cover_Reclass %in% c("Forest", "Shrub", "Wetlands")) %>% 
+  group_by(reachid, Land_Cover_Reclass) %>% 
+  summarize(percent_cover = sum(PERCENTAGE)) %>% 
+  rename(rca_id = reachid) %>% 
+  spread(key = Land_Cover_Reclass, value = percent_cover, fill = 0)
+
 temp.rca <- temp.rca %>% 
-  select(Site, rca_id, sampleDate, meanT, ma_mean, slope_P, elev_mean, elev_mean_ca, 
-         elev_delta, flowacc_max) %>% 
-  mutate(cont_area = flowacc_max * 25 / 1000000)
+  left_join(buffer_summs)
+
 ```
 
-Double check. Great! Maximum flow accumulation near the mouth is 580 km2 and HUC10 is 585.
-
-```{r}
-temp.rca %>% 
-  distinct(cont_area, rca_id, Site) %>% 
-  arrange(desc(cont_area))
-```
-
+## STILL NEED TO ADD IN PRECIP AND SWE FROM DAYMET - SKIPPING FOR NOW AND MOVING FORWARD WITH 3DAY AIR
 
 ## Merge daymet data to stream temperature data frame
 
 Read in climate covariates stored in file geodatabases that were calculated for the RCAs. These are tables that have climate information linked to the RCAs.
 
-Start with the daymet data: air, precipitation, and SWE. Leslie clarified what the date represents for DAYMET in an email on 10/18/19: "For the daymet data the date represents the mid-point of the 8-day series. For May 1st - average is 4 days prior and 3 days after."
+Start with the daymet data: air, precipitation, and SWE. We are now moving forward with 3-day averaged air temperatures. The daymet date represents the middle day.
+
+NOTE: currently, the precip and swe are still 8-day averages, unchanged. Leslie is planning to sum 3 day precipitation by RCA and add that in later.
+
+(Previously, we were using 8-day averages to match the LST, but because daymet had a much stronger correlation with stream temperature, we are now just focussed on that dataset. In Siegel and Volk, they justified 3 day and 5 day lagged air temperatures so we are trying that out to match. Longer lags would be better for bigger systems.)
+
+
 
 ```{r}
 
@@ -251,7 +228,7 @@ fc_list <- ogrListLayers(fgdb)
 print(fc_list)
 
 # Read the feature class
-daymet <- sf::st_read(dsn = fgdb, layer = "anchor_daymet")
+daymet <- sf::st_read(dsn = fgdb, layer = "tair3_anchor_all")
 
 daymet <- daymet %>% 
   mutate(date = as.Date(date)) %>% 
@@ -266,77 +243,62 @@ daymet %>%
 
 Merge the daymet data (i.e. air temp, swe, and precip covariates) to the stream temperature data frame so that only rca_ids and dates in the stream temperature data frame for which we have empirical data are kept. For now, remove daymet so it doesn't bog down the system (though we will need it later for prediction). 
 
-Note: moving average of stream temperatures is currently indexed by last day of 8 day window. Since daymet is 5th day of 8-day window, need to subtract 3 days from julian date in the temp.rca data frame for merging.
+Note: moving average of stream temperatures is currently indexed by last day of 8 day window. Daymet is middle of 3-day window. We want daymet to represent day of and two days prior for modeling daily stream temperatures.
 
 Call this data frame temp.dm since it will be our model using the daymet air temperatures. (next model can be temp.lst.)
 
 ```{r}
 
+daymet <- daymet %>% 
+  mutate(date_day3 = date + 1)
+
 temp.dm <- temp.rca %>% 
-  mutate(date_day5 = sampleDate - 3) %>% 
-  left_join(daymet, by = c("rca_id" = "rca_id", "date_day5" = "date")) 
+  left_join(daymet, by = c("rca_id" = "rca_id", "sampleDate" = "date_day3")) 
 
 # rm(daymet)
 ```
 
-Figure out pattern in missing data. All from Jan-April and Sept-Dec.
+Figure out pattern in missing data. All from Jan-April and Oct-Dec. We can drop those dates because we are only modeling summer stream temperatures.
 
 ```{r}
 temp.dm %>% 
-  filter(is.na(tair)) %>% 
-  distinct(month(date_day5))
+  filter(is.na(tair3)) %>% 
+  distinct(month(sampleDate))
 ```
 
 Remove fall/winter stream temps that we don't plan to model. 
 
 ```{r}
 temp.dm <- temp.dm %>% 
-  filter(!is.na(tair)) 
+  filter(!is.na(tair3)) 
 ```
 
 Add columns for week, month, and year.
 
 ```{r}
 temp.dm <- temp.dm %>% 
-  mutate(week = week(date_day5),
-         month = month(date_day5),
-         year = year(date_day5),
-         day = as.numeric(format(date_day5, "%j"))) %>% 
-  arrange(Site, date_day5)
+  mutate(week = week(sampleDate),
+         month = month(sampleDate),
+         year = year(sampleDate),
+         day = as.numeric(format(sampleDate, "%j"))) %>% 
+  arrange(Site, sampleDate)
   
 ```
 
 
-Explore data.
+## Merge April 1st swe from Daymet
 
-Air temperatures by year.
-
-```{r}
-temp.dm %>% 
-  ggplot() +
-  geom_line(aes(x = day, y = tair)) +
-  geom_line(aes(x = day, y = ma_mean), color = "red", lty = 2) +
-  facet_wrap(~Site)
-```
-
-Stream temperatures by year.
+Leslie added a file to the data folder with this information.
 
 ```{r}
-temp.dm %>% 
-  ggplot() +
-  geom_line(aes(x = day, y = tair, color = as.factor(year))) +
-  facet_wrap(~Site)
-```
 
-Stream temperature versus air temperature with points size by precip. 
+sweA1 <- read_csv("Data/sweA1_anchor.csv")
+sweA2 <- sweA1 %>% mutate(date = as.Date(date), sampyear= year(date)) %>% select(rca_id, sweA1, sampyear)
 
-```{r}
-temp.dm %>% 
-  ggplot() +
-  geom_point(aes(x = tair, y = ma_mean, color = prcp)) +
-  facet_wrap(~Site) 
+temp.dm <- temp.dm6 %>% left_join(sweA2, by=c("rca_id", "sampyear"))
 
 ```
+
 
 ## Merge LST data to data frame
 
@@ -359,16 +321,120 @@ lst <- lst %>%
 
 ```
 
-Merge LST to the model data frame with daymet and spatial covariates. Leslie and Timm clarified what the date represents for LST in an email on 10/18/19: "The date in the LST file name represents the first day of a consecutive 8 day period.."
+Merge LST to the model data frame with daymet and spatial covariates. Leslie and Timm clarified what the date represents for LST in an email on 10/18/19: "The date in the LST file name represents the first day of a consecutive 8 day period..". Add a date to match the 8 day moving average of stream temperature before merging.
 
 ```{r}
 
+lst <- lst %>% 
+  mutate(date_day8 = date + 7)
+
+
 temp.dm <- temp.dm %>% 
-  mutate(date_day1 = date_day5 - 4) %>% 
-  left_join(lst, by = c("rca_id" = "rca_id", "date_day1" = "date")) %>% 
+  left_join(lst, by = c("rca_id" = "rca_id", "sampleDate" = "date_day8")) %>% 
   mutate(lst2 = LST * 0.02 - 273.15)
 
 ```
+
+
+ - 
+
+## Temperature Index 
+
+Remove temperatures less than 0 and calculate temperature index (waterT-airT)/waterT. index approaches 0 then air and stream temp are most similar.
+ 
+```{r, echo=FALSE, warnings = FALSE}
+#filter temps less than 2
+temp <- temp.dm %>% filter(ma_mean > 0) %>% mutate(index=(ma_mean-tair)/ma_mean)
+
+ggplot() + geom_point (data=temp, aes(x = day, y = index, color=year)) +
+     facet_wrap(~Site, scales="free_y") 
+
+month5b <- filter(temp,month==5) 
+ggplot() + geom_point (data=month5b, aes(x = day, y = index, color=year)) +
+     facet_wrap(~Site, scale="free_y") 
+
+month6b <- filter(temp,month==6) 
+ggplot() + geom_point (data=month6b, aes(x = day, y = index, color=year)) +
+     facet_wrap(~Site, scales="free_y") 
+
+month7b <- filter(temp,month==7) 
+ggplot() + geom_point (data=month7b, aes(x = day, y = index, color=year)) +
+     facet_wrap(~Site, scales="free_y") 
+
+month8b <- filter(temp,month==8) 
+ggplot() + geom_point (data=month8b, aes(x = day, y = index, color=year)) +
+     facet_wrap(~Site, scales="free_y") 
+
+month9b <- filter(temp,month==9) 
+ggplot() + geom_point (data=month9b, aes(x = day, y = index, color=year)) +
+     facet_wrap(~Site, scales="free_y") 
+
+
+
+```
+### Remove all data prior to June 1 (Julian Day 152) and replot index
+```{r, warnings = FALSE, echo=FALSE}
+temp <- temp %>% filter(day > 152) 
+ggplot() + geom_point (data=temp, aes(x = day, y = index, color=year)) +
+     facet_wrap(~Site)
+```
+
+
+### plot time-series to see seasonal split
+Identify median value of Maximum stream temperature and air temperature to locate apex of ascending and descending limb and seasonal break in model. Stream temp = 201 and air temp = 205. Choose July 20 (julian day = 201) as split. Will have 2 seasons June 1 - July 20: (152-201) and july 21 - September 30: (202-303)
+
+```{r}
+
+sites <- temp %>% distinct(Site) %>% pull(Site)
+# i <- sites[14]
+
+#pdf("Plots of temperature by year and site.pdf", width = 12, height = 8, units = "in")
+
+for(i in sites) {
+  dat <- temp %>% filter(Site == i)
+  sitename <- dat %>% distinct(Site) %>% pull(Site)
+  p <- ggplot(data = dat, aes(x = day, y = ma_mean)) +
+    geom_line() +
+    facet_wrap(~year) +
+    labs(main = sitename)
+  print(p)
+}
+
+dev.off()
+
+#get median julian day for max ma_mean
+max_ma_mean <- temp %>% 
+  filter(month %in% 6:8) %>% 
+  group_by(Site, year) %>% 
+  summarize(ma_mean = max(ma_mean, na.rm = TRUE),
+            number_of_days = n()) %>% 
+  filter(number_of_days > 71)
+
+max_ma_mean
+
+temp %>% 
+  right_join(max_ma_mean) %>% 
+  summarize(mean(day),
+            sd(day))
+
+#get median julian day for air temperature
+max_tair <- temp %>% 
+  filter(month %in% 6:8) %>% 
+  group_by(Site, year) %>% 
+  summarize(max_tair = max(tair, na.rm = TRUE),
+            number_of_days = n()) %>% 
+  filter(number_of_days > 71)
+
+max_tair
+
+temp %>% 
+  right_join(max_tair) %>% 
+  summarize(mean(day),
+            sd(day))
+
+```
+
+
 
 
 ## Save data frame with empirical data, daymet, and lst.
@@ -376,73 +442,11 @@ temp.dm <- temp.dm %>%
 ```{r}
 save(temp.dm, file = "output/temp.dm")
 
-# load(file = "output/temp.dm.Rdata")
 ```
 
+## STOPPED HERE NOTHING BELOW HAS BEEN RUN 2/5/20
 
-
-## Explore LST and daymet as covariates
-
-See correlation between lst and daymet.
-Test models of stream temp with each.
-
-```{r}
-# load(file = "output/temp.dm.Rdata")
-
-cor(temp.dm$lst2, temp.dm$tair, use = "pairwise.complete.obs")
-
-temp.dm %>% 
-  ggplot() +
-  geom_point(aes(x = tair, y = lst2)) +
-  geom_abline(slope = 1, intercept = 0) +
-  scale_x_continuous(limits = c(0, 25)) +
-  scale_y_continuous(limits = c(0, 25)) +
-  facet_wrap(~month)
-
-
-```
-
-plot LST versus stream temperature.
-
-```{r}
-temp.dm %>% 
-  ggplot() +
-  geom_point(aes(x = lst2, y = ma_mean, color = as.factor(month))) +
-  facet_wrap(~Site) 
-
-```
-
-
-
-```{r}
-temp.dm %>% 
-  filter(!is.na(LST)) %>% 
-  summarize(clm = cor(lst2, ma_mean),
-            cam = cor(tair, ma_mean))
-
-
-lm1 <- lm(ma_mean ~ tair, data = temp.dm %>% filter(!is.na(LST)))
-lm2 <- lm(ma_mean ~ lst2, data = temp.dm %>% filter(!is.na(LST)))
-AIC(lm1, lm2)
-
-```
-
-Try out sets of models.
-
-```{r}
-
-corrplot.mixed(cor(temp.dm %>% select(tair, prcp, swe, slope_P, elev_mean, cont_area)))
-
-full.model <- lm(ma_mean ~ tair + prcp + swe + slope_P + elev_mean + cont_area, data = temp.dm,
-                 na.action = "na.fail")
-
-vif(full.model)
-
-
-summary(full.model)
-dredge(full.model)
-
-```
+## Data availability by site and year table
 
 Number of sites within each year and number of days within each year. (similar to table 1 in mcnyset)
 
@@ -455,6 +459,8 @@ temp.dm %>%
   distinct(Site, year) %>% 
   count(year)
 ```
+
+## Exploring options for spatial and temporal autocorrelation
 
 Check for spatial autocorrelation in residuals. Following instructions here: [How can I calculate Moran's I in R?] https://stats.idre.ucla.edu/r/faq/how-can-i-calculate-morans-i-in-r/.
 
