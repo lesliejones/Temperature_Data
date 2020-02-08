@@ -25,7 +25,7 @@ library(tidyverse)
 Load data frame from 1_Creat model data frame.Rmd
 
 ```{r}
-load(file = "output/temp.dm.Rdata")
+load(file = "output/temp")
 
 ```
 
@@ -37,11 +37,11 @@ Test models of stream temp with each.
 
 ```{r}
 
-cor(temp.dm$lst2, temp.dm$tair, use = "pairwise.complete.obs")
+cor(temp$lst2, temp$tair3, use = "pairwise.complete.obs")
 
-temp.dm %>% 
+temp %>% 
   ggplot() +
-  geom_point(aes(x = tair, y = lst2)) +
+  geom_point(aes(x = tair3, y = lst2)) +
   geom_abline(slope = 1, intercept = 0) +
   scale_x_continuous(limits = c(0, 25)) +
   scale_y_continuous(limits = c(0, 25)) +
@@ -53,9 +53,9 @@ temp.dm %>%
 plot LST versus stream temperature.
 
 ```{r}
-temp.dm %>% 
+temp %>% 
   ggplot() +
-  geom_point(aes(x = lst2, y = ma_mean, color = as.factor(month))) +
+  geom_point(aes(x = lst2, y = meanT, color = as.factor(month))) +
   facet_wrap(~Site) 
 
 ```
@@ -63,15 +63,17 @@ temp.dm %>%
 
 
 ```{r}
-temp.dm %>% 
+temp %>% 
   filter(!is.na(LST)) %>% 
-  summarize(clm = cor(lst2, ma_mean),
-            cam = cor(tair, ma_mean))
+  summarize(clm = cor(lst2, meanT),
+            cam = cor(tair3, meanT))
 
 
-lm1 <- lm(ma_mean ~ tair, data = temp.dm %>% filter(!is.na(LST)))
-lm2 <- lm(ma_mean ~ lst2, data = temp.dm %>% filter(!is.na(LST)))
+lm1 <- lm(meanT ~ tair3, data = temp %>% filter(!is.na(LST)))
+lm2 <- lm(meanT ~ lst2, data = temp %>% filter(!is.na(LST)))
 AIC(lm1, lm2)
+
+summary(lm1)
 
 ```
 
@@ -79,9 +81,12 @@ AIC(lm1, lm2)
 
 ## Explore correlations between the covariates
 
+Spatial covariates first.
+
 ```{r}
-temp.rca %>% 
-  distinct(reach_slope, reach_length, rca_elev_min, rca_elev_max, rca_elev_mn, ca_elev_mn, cont_area) %>% 
+temp %>% 
+  distinct(reach_slope, reach_length, Forest, Shrub, Wetland, Riparian, rca_elev_min, rca_elev_max, 
+           rca_elev_mn, ca_elev_mn, cont_area, elev_delta, sweA1) %>% 
   cor(.) %>% 
   corrplot.mixed(.)
 ```
@@ -115,7 +120,7 @@ Remove April
 temp.dm1 <- filter(temp.dm, month > 4)
 
 ```
-#merge new flow accumulation and elevation covariate that Dustin has calculated.
+
 
 
 ## Exploratory Graphs
@@ -317,12 +322,6 @@ summary(chosen.modelS)
 summ(chosen.modelS, confint = TRUE, digits = 3)
 ```
 
-## SAVE DATAFRAME for model development
-
-```{r}
-save(temp, file = "output/temp.Rdata")
-
-```
 
 
 

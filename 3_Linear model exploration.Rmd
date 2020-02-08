@@ -27,11 +27,9 @@ library(visreg)
 
 
 load(file = "output/temp.Rdata")
-load(file = "output/tempMS.Rdata")
+# load(file = "output/tempMS.Rdata")
 
 ```
-# Simple spring and fall models for testing prediction rmarkdown.
-
 # Explore covariates to include in model
 
 ```{r, ehco=FALSE, warnings = FALSE}
@@ -138,7 +136,55 @@ spring_meanT %>%
 
 ```
 
-# Spatial model with HUC12 random effect versus simple fixed effects model
+
+# Simple spring and fall models for testing predictions 
+
+For testing predictions, just use air temperature and small set of spatial covariates: slope, rca mean elevation, and contributing area. Complete set inludes reach slope, wetlands, rca mean elevation, contributing area mean elevation, contributing area, and swe April 1st, 
+
+```{r}
+
+spring.lm <- lm(meanT ~ tair3 + reach_slope + cont_area + rca_elev_mn, data = spring_meanT)
+
+summary(spring.lm)
+
+vif(spring.lm)
+
+model.rmse.spring(spring.lm)
+
+#drop elevation since not significant
+
+spring.lm <- lm(meanT ~ tair3 + reach_slope + cont_area, data = spring_meanT)
+
+```
+
+Simple fall model.
+
+```{r}
+
+fall.lm <- lm(meanT ~ tair3 + reach_slope + cont_area + rca_elev_mn, data = fall_meanT)
+
+summary(fall.lm)
+
+vif(fall.lm)
+
+model.rmse.fall(fall.lm)
+
+```
+
+Save both models so they can be loaded for the predictions (script 5).
+
+```{r}
+save(spring.lm, file = "output/spring.lm.Rdata")
+
+save(fall.lm, file = "output/fall.lm.Rdata")
+
+
+```
+
+
+
+# Exploration of model types and fits
+## Spatial model with HUC12 random effect versus simple fixed effects model
 
 Compare mixed effects model to linear model to see if random effect is better.
 
@@ -199,7 +245,7 @@ lme4 <- lme(meanT ~ tair + cont_area,
 ranef(lme4)
 ```
 
-# Linear models for spring and fall
+## Linear models for spring and fall
 
 The shifts by HUC12 don't make sense so let's start all over with a regular linear model - no random effects - and go through fixed effects.
 
@@ -261,7 +307,7 @@ write.csv(lm3.dredge, "output/global dredge spring and fall.csv")
 
 ```
 
-# Spatial and temporal cross-validations of seasonal linear models
+## Spatial and temporal cross-validations of seasonal linear models
 
 What years can we leave out for testing temporal predictions? Decided to do a leave-one-out cross-validation on years and sites.
 
@@ -593,7 +639,7 @@ ggplot(data = resid, aes(x= ma_mean, y=predicted, color=Site)) + geom_point()
 ```
 
 
-# GAM models
+## GAM models
 
 Started by examining code used by Siegel and Volk in their paper and available on github.
 

@@ -12,34 +12,16 @@ library(sf)
 library(tidyverse)
 library(rgdal)
 library(lubridate)
+library(gridExtra)
 ```
 
 # Predictions data frame
 
-Read in spatial covariates associated with each RCA. These are stored in three separate feature classes.
+## Spatial covariates
 
-```{r}
-fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/Anchor_LM_Outputs.gdb"
-
-# List all feature classes in a file geodatabase
-subset(ogrDrivers(), grepl("GDB", name))
-fc_list <- ogrListLayers(fgdb)
-print(fc_list)
-
-rca_all2 <- sf::st_read(dsn = fgdb, layer = "anchor_rcas_31012020")
-
-#Select attributes and rename for consistency with model
-rca_all <- rca_all2 %>%  select(-Shape) %>% 
-   rename(elev_mean_ca = Mean_Elev_Contributing_Area) %>% rename (elev_mean=MEAN) %>% rename(flowacc =     
-    Flow_Accumulation) %>%  mutate(cont_area = flowacc * 25 / 1000000) %>% 
-  select(rca_id, K_r, K_s, K_p, CH_r, CH_p, CH_s, CO_r, CO_s, CO_p, P_r, P_s, P_p, S_r, S_s, S_p, elev_mean, elev_mean_ca, cont_area, flowacc) 
-
-rca_all <- data.frame(rca_all)
+Read in spatial covariates associated with each RCA. These are stored in two separate feature classes.
 
 
-```
-
-#add slope_P
 ```{r}
 
 fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/Anchor.gdb"
@@ -50,57 +32,185 @@ fc_list <- ogrListLayers(fgdb)
 print(fc_list)
 
 # Read the feature class
-rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches")
+rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_06022020") %>% as.data.frame
 
-reach <- rca_reach %>% select(reachid, slope_P, SLength, Z_Mean)
-
-pred <- rca_all %>% left_join(reach, by = c("rca_id" = "reachid")) 
- 
+rcas <- sf::st_read(dsn = fgdb, layer = "anchor_rcas_attributed_06022020") %>% as.data.frame
 
 ```
 
-compare old flowmax to Dustin's
+Create a new data frame that will be used for predictions. Use the flowacc value and convert to square kilometers. (The cont_area is the flow accumulation multiplied by 25 and converted from square meters to square kilometers.)
+
 ```{r}
-contarea <- sf::st_read(dsn = fgdb, layer = "rca_cont_area")
 
-flow <- contarea %>% select(rca_id, flowacc_max)
+new_data_sp <- rca_reach %>% 
+  select(rca_id = reach_id, reach_slope, reach_length, Forest, Shrub, Wetland, Riparian) 
 
-pred2 <- pred %>% left_join(flow, by = "rca_id") %>%  mutate(cont_area2 = flowacc_max * 25 / 1000000) %>% mutate(diff= cont_area2-cont_area) %>% select(rca_id, cont_area, cont_area2, flowacc_max, flowacc, diff)
+new_data_sp <- new_data_sp %>% 
+  left_join(rcas %>% select(rca_id:ca_elev_mn)) %>% 
+  mutate(cont_area = flowacc * 25 / 1000000)
+
 ```
 
-#Filter salmon rcas only. This is the dataframe that we will predict on.Look at distribution of covariates that will predict over compared to rcas used in model parameterization.
+## Filter on salmon rcas
+
+Filter salmon rcas only. This is the dataframe that we will predict on. Look at distribution of covariates that will predict over compared to rcas used in model parameterization.
+
 ```{r}
-salmon_rcas <- pred %>% mutate(salmon = K_p + CH_p + P_p + CO_p + S_p) %>% filter(salmon > 0) 
+
+salmon_rcas <- new_data_sp %>% 
+  mutate(salmon = K_p + CH_p + P_p + CO_p + S_p) %>% 
+  filter(salmon > 0) 
+
 nrow(salmon_rcas)
 
-cov <- salmon_rcas %>% select(rca_id, elev_mean, elev_mean_ca, cont_area, slope_P)
-summary(cov)
+salmon_rcas %>% 
+  select(rca_id, rca_elev_mn, ca_elev_mn, cont_area, reach_slope) %>% 
+  cov(.)
 
-hist(salmon_rcas$elev_mean_ca)
-hist(salmon_rcas$elev_mean)
-hist(salmon_rcas$slope_P)
+hist(salmon_rcas$ca_elev_mn)
+hist(salmon_rcas$rca_elev_mn)
+hist(salmon_rcas$reach_slope)
 hist(salmon_rcas$cont_area)
 ```
 
-Read in daymet data.
+## Add Daymet data to new_data data frame
+
+Read in daymet data. For now, subset to the most recent decade and only for air temperature. (Add in prcp and swe later on).
 
 ```{r}
 
-#fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_DAYMET.gdb"
+fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_DAYMET.gdb"
 
-# List all feature classes in a file geodatabase
-#subset(ogrDrivers(), grepl("GDB", name))
-#fc_list <- ogrListLayers(fgdb)
-#print(fc_list)
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
 
-# Read the feature class
-#daymet <- sf::st_read(dsn = fgdb, layer = "anchor_daymet")
+daymet <- sf::st_read(dsn = fgdb, layer = "anchor_daymet")
 
-daymet_pred <- daymet %>% 
-  mutate(date = as.Date(date), year= year(date), month = month(date), day=day(date)) %>% left_join(salmon_rcas, by="rca_id")
+new_data_cl <- daymet %>%
+  filter(year(date_day3) %in% 2010:2018, month(date_day3) %in% 6:9) %>% 
+  select(-date) %>% 
+  right_join(salmon_rcas %>% distinct(rca_id))
+
+summary(new_data_cl)
 
 ```
 
+Merge climate and spatial data frames. Join on the climate data so that spatial covariates are repeated across all dates. Also the climate data frame has been filtered to only include the salmon rcas.
+
+```{r}
+
+new_data <- left_join(new_data_cl %>% rename(date = date_day3), new_data_sp)
+
+```
+Add julian date so that the spring model and fall models are predicting only within the range of dates that were used to build the models.
+
+```{r}
+new_data <- new_data %>% 
+  mutate(day = as.numeric(format(date, "%j")),
+         year = year(date))
+```
+
+
+
+# Predictions over new data frame
+
+Load models from scrip 3.
+
+```{r}
+load(file = "output/spring.lm.Rdata")
+load(file = "output/fall.lm.Rdata")
+```
+
+Make predictions for spring
+
+```{r}
+
+new_data_spring <- new_data %>% 
+  filter(day < 202)
+
+new_data_spring <- new_data_spring %>% 
+  mutate(preds = predict(spring.lm, newdata = new_data_spring))
+
+```
+
+Make predictions for fall.
+
+```{r}
+
+new_data_fall <- new_data %>% 
+  filter(day > 201)
+
+new_data_fall <- new_data_fall %>% 
+  mutate(preds = predict(fall.lm, newdata = new_data_fall))
+
+```
+
+
+Combine.
+
+```{r}
+preds <- bind_rows(new_data_spring, new_data_fall)
+```
+
+Save predictions data frame.
+
+```{r}
+save(preds, file = "output/preds.Rdata")
+```
+
+
+
+# Exploring thermal niche for salmon
+
+Load predictions data frame.
+
+```{r}
+load(file = "output/preds.Rdata")
+```
+
+
+Plot thermal niche for Chinook by life stage.
+
+```{r}
+
+g1 <- preds %>% 
+  filter(K_p == 1) %>% 
+  group_by(date, day, year) %>% 
+  summarize(mean_pred = mean(preds)) %>% 
+  ggplot() +
+  geom_line(aes(x = day, y = mean_pred, color = as.factor(year))) 
+
+g2 <- preds %>% 
+  filter(S_p == 1) %>% 
+  group_by(date, day, year) %>% 
+  summarize(mean_pred = mean(preds)) %>% 
+  ggplot() +
+  geom_line(aes(x = day, y = mean_pred, color = as.factor(year))) 
+
+grid.arrange(g1, g2, nrow = 1)
+
+```
+
+
+```{r}
+
+g1 <- preds %>% 
+  filter(K_p == 1) %>% 
+  group_by(day) %>% 
+  summarize(mean_pred = mean(preds),
+            sd_pred = sd(preds)) %>% 
+  ggplot() +
+  geom_ribbon(aes(x = day, ymin = mean_pred - sd_pred, ymax = mean_pred + sd_pred)) 
+
+```
+
+Tally total amount of habitat by temperature bins.
+
+```{r}
+
+
+```
 
 
 

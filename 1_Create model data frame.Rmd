@@ -153,9 +153,9 @@ fc_list <- ogrListLayers(fgdb)
 print(fc_list)
 
 # Read the feature class
-rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches")
+rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_06022020")
 
-rcas <- sf::st_read(dsn = fgdb, layer = "anch_rca")
+rcas <- sf::st_read(dsn = fgdb, layer = "anchor_rcas_attributed_06022020")
 
 ```
 
@@ -164,11 +164,12 @@ Merge attributes for all to the new data frame. Use the flowacc value and conver
 ```{r}
 
 temp.rca <- temp.rca %>% 
-  left_join(rca_reach %>% select(reachid, reach_slope, reach_length), by = c("rca_id" = "reachid")) %>% 
+  left_join(rca_reach %>% select(reach_id, reach_slope, reach_length, Forest, Shrub, Wetland, Riparian), 
+            by = c("rca_id" = "reach_id")) %>% 
   select(-Shape)
 
 temp.rca <- temp.rca %>% 
-  left_join(rcas %>% select(rca_id:S_p, HUC_name:ca_elev_mn)) %>% 
+  left_join(rcas %>% select(rca_id:ca_elev_mn)) %>% 
   select(-Shape) %>% 
   mutate(cont_area = flowacc * 25 / 1000000)
 
@@ -180,27 +181,6 @@ Create a new elevation covariate that matches what was used by Siegel and Volk -
 
 temp.rca <- temp.rca %>% 
   mutate(elev_delta = ca_elev_mn - rca_elev_mn)
-
-```
-
-Read in the NLCD attributes - percent forest, wetland, and shrub in the riparian buffer of each reach. Dustin is working on getting these attributes on the reaches feature class, so later these can be read in there.
-
-I calculated percent wetland, forest, and shrub riparian cover in GIS by buffering stream by 30m, converted nlcd raster to polygon, used select function to save individual polygon layers of wetland, forest, and shrub. Used Tabulate intersection function to get tables by rca_id or percent overlap and then joined tables to rca shapefile.
-The covariates are joined individually to the anchor dataframe here. Code also replaces NA with 0 for all 3 covariates.
-
-```{r}
-
-nlcd <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_NLCD_Tab_Int")
-
-buffer_summs <- nlcd %>% 
-  filter(Land_Cover_Reclass %in% c("Forest", "Shrub", "Wetlands")) %>% 
-  group_by(reachid, Land_Cover_Reclass) %>% 
-  summarize(percent_cover = sum(PERCENTAGE)) %>% 
-  rename(rca_id = reachid) %>% 
-  spread(key = Land_Cover_Reclass, value = percent_cover, fill = 0)
-
-temp.rca <- temp.rca %>% 
-  left_join(buffer_summs)
 
 ```
 
@@ -253,24 +233,31 @@ daymet <- daymet %>%
   mutate(date_day3 = date + 1)
 
 temp.dm <- temp.rca %>% 
-  left_join(daymet, by = c("rca_id" = "rca_id", "sampleDate" = "date_day3")) 
+  left_join(daymet %>% select(-date), by = c("rca_id" = "rca_id", "sampleDate" = "date_day3")) 
 
 # rm(daymet)
 ```
 
+
+## NOT YET DONE: Add in 8-day moving average of daymet temperatures because they may have a better correlation to stream temps
+
 Figure out pattern in missing data. All from Jan-April and Oct-Dec. We can drop those dates because we are only modeling summer stream temperatures.
 
 ```{r}
+
 temp.dm %>% 
   filter(is.na(tair3)) %>% 
   distinct(month(sampleDate))
+
 ```
 
 Remove fall/winter stream temps that we don't plan to model. 
 
 ```{r}
+
 temp.dm <- temp.dm %>% 
   filter(!is.na(tair3)) 
+
 ```
 
 Add columns for week, month, and year.
@@ -293,9 +280,13 @@ Leslie added a file to the data folder with this information.
 ```{r}
 
 sweA1 <- read_csv("Data/sweA1_anchor.csv")
-sweA2 <- sweA1 %>% mutate(date = as.Date(date), sampyear= year(date)) %>% select(rca_id, sweA1, sampyear)
 
-temp.dm <- temp.dm6 %>% left_join(sweA2, by=c("rca_id", "sampyear"))
+sweA1 <- sweA1 %>% 
+  mutate(year = year(date)) %>% 
+  select(rca_id, sweA1, year)
+
+temp.dm <- temp.dm %>% 
+  left_join(sweA1, by=c("rca_id", "year"))
 
 ```
 
@@ -321,30 +312,35 @@ lst <- lst %>%
 
 ```
 
-Merge LST to the model data frame with daymet and spatial covariates. Leslie and Timm clarified what the date represents for LST in an email on 10/18/19: "The date in the LST file name represents the first day of a consecutive 8 day period..". Add a date to match the 8 day moving average of stream temperature before merging.
+Merge LST to the model data frame with daymet and spatial covariates. Leslie and Timm clarified what the date represents for LST in an email on 10/18/19: "The date in the LST file name represents the first day of a consecutive 8 day period". Add a date to match the 8 day moving average of stream temperature before merging.
 
 ```{r}
 
 lst <- lst %>% 
   mutate(date_day8 = date + 7)
 
-
 temp.dm <- temp.dm %>% 
-  left_join(lst, by = c("rca_id" = "rca_id", "sampleDate" = "date_day8")) %>% 
+  left_join(lst %>% select(-date), by = c("rca_id" = "rca_id", "sampleDate" = "date_day8")) %>% 
   mutate(lst2 = LST * 0.02 - 273.15)
 
 ```
 
 
- - 
 
 ## Temperature Index 
 
 Remove temperatures less than 0 and calculate temperature index (waterT-airT)/waterT. index approaches 0 then air and stream temp are most similar.
  
 ```{r, echo=FALSE, warnings = FALSE}
-#filter temps less than 2
-temp <- temp.dm %>% filter(ma_mean > 0) %>% mutate(index=(ma_mean-tair)/ma_mean)
+
+temp <- temp.dm %>% 
+  filter(meanT > 0) %>% 
+  mutate(index = (meanT - tair3)/meanT)
+```
+
+Explore temperature index by sites and month.
+
+``` {r, echo=FALSE, warnings = FALSE}
 
 ggplot() + geom_point (data=temp, aes(x = day, y = index, color=year)) +
      facet_wrap(~Site, scales="free_y") 
@@ -372,15 +368,23 @@ ggplot() + geom_point (data=month9b, aes(x = day, y = index, color=year)) +
 
 
 ```
-### Remove all data prior to June 1 (Julian Day 152) and replot index
+Remove all data prior to June 1 (Julian Day 152) and replot index
+
 ```{r, warnings = FALSE, echo=FALSE}
-temp <- temp %>% filter(day > 152) 
+temp <- temp %>% 
+  filter(day > 152) 
+```
+
+
+
+```{r, warnings = FALSE, echo=FALSE}
 ggplot() + geom_point (data=temp, aes(x = day, y = index, color=year)) +
      facet_wrap(~Site)
 ```
 
 
-### plot time-series to see seasonal split
+## Seasonal split on maximum temperatures
+
 Identify median value of Maximum stream temperature and air temperature to locate apex of ascending and descending limb and seasonal break in model. Stream temp = 201 and air temp = 205. Choose July 20 (julian day = 201) as split. Will have 2 seasons June 1 - July 20: (152-201) and july 21 - September 30: (202-303)
 
 ```{r}
@@ -439,8 +443,15 @@ temp %>%
 
 ## Save data frame with empirical data, daymet, and lst.
 
+Check that everything is numeric and fix those that are not.
+
 ```{r}
-save(temp.dm, file = "output/temp.dm")
+str(temp)
+
+temp <- temp %>% 
+  mutate(Riparian = as.numeric(Riparian))
+
+save(temp, file = "output/temp.Rdata")
 
 ```
 
@@ -524,8 +535,7 @@ We will need to fill all the missing dates back in for each site and check by Si
 ## Save CSV of all data currently available 12.20.19
 
 ```{r}
-write.csv(temp.dm, "output/temp_model_data_122019.csv")
-save(temp.dm, file = "output/temp_model_data.Rdata")
+# write.csv(temp, "output/temp_model_data_122019.csv")
 
 ```
 
