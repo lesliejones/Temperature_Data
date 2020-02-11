@@ -7,7 +7,6 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
 library(sf)
 library(tidyverse)
 library(rgdal)
@@ -23,32 +22,24 @@ Read in spatial covariates associated with each RCA. These are stored in two sep
 
 
 ```{r}
-
 fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/Anchor.gdb"
-
 # List all feature classes in a file geodatabase
 subset(ogrDrivers(), grepl("GDB", name))
 fc_list <- ogrListLayers(fgdb)
 print(fc_list)
-
 # Read the feature class
 rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_06022020") %>% as.data.frame
-
 rcas <- sf::st_read(dsn = fgdb, layer = "anchor_rcas_attributed_06022020") %>% as.data.frame
-
 ```
 
 Create a new data frame that will be used for predictions. Use the flowacc value and convert to square kilometers. (The cont_area is the flow accumulation multiplied by 25 and converted from square meters to square kilometers.)
 
 ```{r}
-
 new_data_sp <- rca_reach %>% 
   select(rca_id = reach_id, reach_slope, reach_length, Forest, Shrub, Wetland, Riparian) 
-
 new_data_sp <- new_data_sp %>% 
   left_join(rcas %>% select(rca_id:ca_elev_mn)) %>% 
   mutate(cont_area = flowacc * 25 / 1000000)
-
 ```
 
 ## Filter on salmon rcas
@@ -56,17 +47,13 @@ new_data_sp <- new_data_sp %>%
 Filter salmon rcas only. This is the dataframe that we will predict on. Look at distribution of covariates that will predict over compared to rcas used in model parameterization.
 
 ```{r}
-
 salmon_rcas <- new_data_sp %>% 
   mutate(salmon = K_p + CH_p + P_p + CO_p + S_p) %>% 
   filter(salmon > 0) 
-
 nrow(salmon_rcas)
-
 salmon_rcas %>% 
   select(rca_id, rca_elev_mn, ca_elev_mn, cont_area, reach_slope) %>% 
   cov(.)
-
 hist(salmon_rcas$ca_elev_mn)
 hist(salmon_rcas$rca_elev_mn)
 hist(salmon_rcas$reach_slope)
@@ -78,30 +65,24 @@ hist(salmon_rcas$cont_area)
 Read in daymet data. For now, subset to the most recent decade and only for air temperature. (Add in prcp and swe later on).
 
 ```{r}
+#fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_DAYMET.gdb"
+#subset(ogrDrivers(), grepl("GDB", name))
+#fc_list <- ogrListLayers(fgdb)
+#print(fc_list)
+#daymet <- sf::st_read(dsn = fgdb, layer = "anchor_daymet")
 
-fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_DAYMET.gdb"
-
-subset(ogrDrivers(), grepl("GDB", name))
-fc_list <- ogrListLayers(fgdb)
-print(fc_list)
-
-daymet <- sf::st_read(dsn = fgdb, layer = "anchor_daymet")
-
+#commented above out because I think your code below is referencing daymet dataframe from 1_Create model data frame.Rmd not the feature class in the geodatabase 
 new_data_cl <- daymet %>%
-  filter(year(date_day3) %in% 2010:2018, month(date_day3) %in% 6:9) %>% 
+  filter(month(date_day3) %in% 6:9) %>% 
   select(-date) %>% 
   right_join(salmon_rcas %>% distinct(rca_id))
-
 summary(new_data_cl)
-
 ```
 
 Merge climate and spatial data frames. Join on the climate data so that spatial covariates are repeated across all dates. Also the climate data frame has been filtered to only include the salmon rcas.
 
 ```{r}
-
 new_data <- left_join(new_data_cl %>% rename(date = date_day3), new_data_sp)
-
 ```
 Add julian date so that the spring model and fall models are predicting only within the range of dates that were used to build the models.
 
@@ -125,25 +106,19 @@ load(file = "output/fall.lm.Rdata")
 Make predictions for spring
 
 ```{r}
-
 new_data_spring <- new_data %>% 
   filter(day < 202)
-
 new_data_spring <- new_data_spring %>% 
   mutate(preds = predict(spring.lm, newdata = new_data_spring))
-
 ```
 
 Make predictions for fall.
 
 ```{r}
-
 new_data_fall <- new_data %>% 
   filter(day > 201)
-
 new_data_fall <- new_data_fall %>% 
   mutate(preds = predict(fall.lm, newdata = new_data_fall))
-
 ```
 
 
@@ -173,28 +148,23 @@ load(file = "output/preds.Rdata")
 Plot thermal niche for Chinook by life stage.
 
 ```{r}
-
 g1 <- preds %>% 
   filter(K_p == 1) %>% 
   group_by(date, day, year) %>% 
   summarize(mean_pred = mean(preds)) %>% 
   ggplot() +
   geom_line(aes(x = day, y = mean_pred, color = as.factor(year))) 
-
 g2 <- preds %>% 
   filter(S_p == 1) %>% 
   group_by(date, day, year) %>% 
   summarize(mean_pred = mean(preds)) %>% 
   ggplot() +
   geom_line(aes(x = day, y = mean_pred, color = as.factor(year))) 
-
 grid.arrange(g1, g2, nrow = 1)
-
 ```
 
 
 ```{r}
-
 g1 <- preds %>% 
   filter(K_p == 1) %>% 
   group_by(day) %>% 
@@ -202,16 +172,9 @@ g1 <- preds %>%
             sd_pred = sd(preds)) %>% 
   ggplot() +
   geom_ribbon(aes(x = day, ymin = mean_pred - sd_pred, ymax = mean_pred + sd_pred)) 
-
 ```
 
 Tally total amount of habitat by temperature bins.
 
 ```{r}
-
-
 ```
-
-
-
-

@@ -1,0 +1,76 @@
+---
+title: "6_Thermal Niche"
+author: "Leslie Jones"
+date: "2/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(sf)
+library(tidyverse)
+library(rgdal)
+library(lubridate)
+library(gridExtra)
+```
+
+# Exploring thermal niche for salmon
+
+Load predictions data frame.
+
+```{r}
+load(file = "output/preds.Rdata")
+```
+
+
+Plot thermal niche for Chinook by life stage.Also show tair3 trends.
+
+```{r}
+
+g1 <- preds %>% 
+  filter(K_p == 1) %>% 
+  group_by(date, day, year) %>% 
+  summarize(mean_pred = mean(preds)) %>% 
+  ggplot() +
+  geom_line(aes(x = day, y = mean_pred, color = as.factor(year))) 
+
+g2 <- preds %>% 
+  filter(K_p == 1) %>% 
+  group_by(date, day, year) %>% 
+  summarize(mean_tair3 = mean(tair3)) %>% 
+  ggplot() +
+  geom_line(aes(x = day, y = mean_tair3, color = as.factor(year))) 
+
+grid.arrange(g1, g2, nrow = 1)
+
+```
+
+Plot mean and standard deviation of predictions over decades. First create decade variable for manipulation.
+```{r}
+pred_decadal <- preds %>% mutate(decade=case_when(year< 1990 ~ 1980, year >= 1990 & year < 2000 ~ 1990, year >=2000 & year < 2010 ~ 2000, year>2009 ~ 2010))
+
+pred_decadal <- pred_decadal %>% 
+  filter(K_p == 1) %>% 
+  group_by(decade, day) %>% 
+  mutate(mean_pred = mean(preds), sd_pred = sd(preds))  
+
+  ggplot(data = pred_decadal) +
+    geom_line(aes(x = day, y = mean_pred, colour="blue")) +
+    geom_errorbar(aes(x = day, ymin = mean_pred - sd_pred, ymax = mean_pred + sd_pred, colour="grey")) + facet_wrap(~decade)
+
+```
+
+Plot Temperature Anomolies!
+Calculate annual mean 1980-2018 then yearly differences between 38 year mean. 
+```{r}
+anomoly <- preds %>% 
+  filter(K_p == 1) %>% 
+  group_by(day) %>% 
+  mutate(mean_pred = mean(preds), difference = mean_pred - preds)
+
+ggplot(data = anomoly) +
+    geom_line(aes(x = day, y = difference, colour=year))
+
+```
+#plot tair and twater

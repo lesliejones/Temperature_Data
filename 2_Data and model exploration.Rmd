@@ -25,7 +25,7 @@ library(tidyverse)
 Load data frame from 1_Creat model data frame.Rmd
 
 ```{r}
-load(file = "output/temp")
+load(file = "output/temp.Rdata")
 
 ```
 
