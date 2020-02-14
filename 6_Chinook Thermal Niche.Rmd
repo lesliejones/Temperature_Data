@@ -175,6 +175,19 @@ ani2 + transition_reveal(day2)
 
 ```
 
+Animate months by decade
+```{r}
+
+all_years22 <- K_p2 %>% group_by(month, day2, decade) %>% 
+  summarize(mean_mth_dec = mean(preds))
+
+ani3 <- ggplot(all_years22, aes(x = day2, y = mean_mth_dec, color=factor(month))) +
+  geom_line() + 
+  labs(x = "Day of Month", y = "Stream Temperature", title = "Average Daily Temperatures by decade") 
+
+ani3 + transition_reveal(day2) + facet_wrap(~decade)
+```
+
 
 
 Summarize predictions by decades and plot
