@@ -1,0 +1,181 @@
+---
+title: "7_Chinook Maps"
+author: "Leslie Jones"
+date: "2/17/2020"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(sf)
+library(tidyverse)
+library(rgdal)
+library(lubridate)
+library(gridExtra)
+library(arsenal)
+library(knitr)
+library(magick)
+library(gganimate)
+library(transformr)
+library(spdplyr)
+library(sp)
+library(dplyr)
+library(ggplot2)
+library(ggmap)
+library(rgeos)
+library(readr)
+library(tibble)
+```
+
+# Exploring Chinook habitat mpas
+
+Load predictions data frame.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE}
+load(file = "output/K_p.Rdata")
+load(file = "output/K_r.Rdata")
+load(file = "output/K_s.Rdata")
+
+```
+
+#set up map template
+```{r}
+fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/Anchor.gdb"
+
+# Read the rca and reaches feature classes
+rcas <- sf::st_read(dsn = fgdb, layer = "anchor_rcas_attributed_06022020")
+
+rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_06022020") %>% mutate(rca_id=reach_id)
+
+#join predictions to reaches and rca shapefiles
+load(file = "output/preds.Rdata")
+preds <- preds
+
+#helpful for how to join dataframe to spatial data maintaining sf class: #http://www.nickeubank.com/wp-content/uploads/2015/10/RGIS2_MergingSpatialData_part1_Joins.html
+
+rca_preds <- sp::merge (rcas, preds, by.x="rca_id", by.y="rca_id") 
+reach_preds <- sp::merge (rca_reach, preds, by.x="reach_id", by.y="rca_id") 
+
+#ggplot() + geom_sf(data=rca_preds)
+
+```
+
+#Chinook predictions
+```{r}
+#filter on chinook for mapping
+K_rcas <- rca_preds %>% mutate(month=month(date)) %>% mutate(decade=case_when(year< 1990 ~ 1980, year >= 1990 & year < 2000 ~ 1990, year >=2000 & year < 2010 ~ 2000, year>2009 ~ 2010)) %>% filter (K_p.y == 1) 
+
+K_reach <- reach_preds %>% mutate(month=month(date)) %>% mutate(decade=case_when(year< 1990 ~ 1980, year >= 1990 & year < 2000 ~ 1990, year >=2000 & year < 2010 ~ 2000, year>2009 ~ 2010)) %>% filter (K_p == 1)
+
+
+```
+
+```{r}
+#Animate timeseries maps
+#https://d4tagirl.com/2017/05/how-to-plot-animated-maps-with-gganimate
+
+#let's try a basic map of mean elevation of rcas with color gradient
+ggplot(data=rcas) + geom_sf(aes(fill=rca_elev_mn)) + scale_colour_viridis_c(option = "C")
+
+#filter predictions for one day and try creating base map of predictions with color gradient and change breaks in color ramp
+K_try <- K_rcas %>% filter(day==202 & year==2004)
+ggplot(data=K_try) + geom_sf(aes(fill=preds)) + 
+    scale_fill_gradient(low = "blue", high = "red", breaks=c(8,9,10,11,12,13,14,15))
+
+#Now let's try small time-series animation by first averaging over August and showing mean predictions over all years
+
+#https://ditheringdata.netlify.com/2018/01/01/gganimate/
+#https://semba-blog.netlify.com/10/29/2018/animating-oceanographic-data-in-r-with-ggplot2-and-gganimate/
+#https://aberdeenstudygroup.github.io/studyGroup/lessons/Visualising%20Spatial%20Data/Visualising_Spatial_Data_in_R/
+
+K_aug <- rca_preds  %>% mutate(month=month(date)) %>% filter(month==8) %>% group_by (rca_id, year, month) %>% summarise(aug_mn = mean(preds))
+
+m1 <- ggplot() + geom_sf(data=K_aug, aes(fill=aug_mn)) + 
+    scale_fill_gradient(name = "Temperature (Celsius)", low = "blue", high = "red") + 
+    labs(title= "Average August Stream Temperature: {as.integer(frame_time)}", x="Longitude", y="Latitude") +
+     transition_time(year)
+
+animate(m1, nframes=38, fps=1)
+
+
+#how about trying daily temperatures for 1 chosen year
+K_2004 <- K_rcas  %>% filter(year==2004) %>% group_by (rca_id, date) %>% summarise(day_mn = mean(preds)) 
+
+m2 <- ggplot() + geom_sf(data=K_2004, aes(fill=day_mn)) + 
+    scale_fill_gradient(name = "Temperature (Celsius)", low = "blue", high = "red") + 
+    labs(title= "Average Daily Stream Temperature: {frame_time}", x="Longitude", y="Latitude") +
+     transition_time(date)
+
+animate(m2, fps=1)
+anim_save(filename="Daily_2004_animation.mp4", animation = last_animation())
+
+```
+#static maps by decade - warm and cold year - interannual variation (rcas)
+```{r}
+
+#plot interannual variability of rcas
+annual <- K_rcas %>% group_by(rca_id, year) %>% mutate(yr_mn=mean(preds), yr_sd=sd(preds))
+ggplot(data=annual) + geom_sf(aes(fill=yr_sd)) + 
+    scale_fill_gradient(low = "blue", high = "red",name = "SD of Temperature (Celsius)") +
+    labs(title="Interannual variation of mean annual temperatures", x="Longitude", y="Latitude")
+
+ggsave("Anchor_chinook_plots/Interannual_variation_mean_annual_temperatures.jpeg", plot=last_plot())
+
+#faceted map for cold year and warm year - annual average temperatures
+warm_cold <- K_rcas %>% filter(year==2004 | year==1992) %>% group_by(rca_id, year) %>% 
+  mutate(yr_mn=mean(preds), yr_sd=sd(preds))
+
+ggplot(data=warm_cold) + geom_sf(aes(fill=yr_mn)) + 
+    scale_fill_gradient(name = "Temperature (Celsius)", low = "blue", high = "red") + facet_wrap(~year) +
+     labs(title="Mean Annual Temperatures for warmest and coldest years", x="Longitude", y="Latitude")
+
+ggsave("Anchor_chinook_plots/Mean_Annual_Temperature_warm_coldyears.jpeg", plot=last_plot())
+
+#average temperatures by decade and mapped
+decade<- K_rcas %>%  group_by(rca_id, decade) %>% 
+  mutate(dec_mn=mean(preds), dec_sd=sd(preds))
+
+ggplot(data=decade) + geom_sf(aes(fill=dec_mn)) + 
+    scale_fill_gradient(name = "Temperature (Celsius)", low = "blue", high = "red") + facet_wrap(~decade) +
+   labs(title="Mean decadal temperatures", x="Longitude", y="Latitude")
+
+ggsave("Anchor_chinook_plots/Mean_decadal_temperatures.jpeg", plot=last_plot())
+```
+
+#Monthly averages faceted by decade
+```{r}
+#average temperatures by decade and mapped
+decade2<- K_rcas %>%  group_by(rca_id, month, decade) %>% 
+  mutate(dec_mn=mean(preds), dec_sd=sd(preds))
+
+jun <- decade2 %>% filter(month==6)
+ggplot(data=jun) + geom_sf(aes(fill=dec_mn)) + 
+    scale_fill_gradient(name = "Temperature (Celsius)", low = "blue", high = "red") + facet_wrap(~decade) +
+   labs(title="Mean June temperatures by decade", x="Longitude", y="Latitude")
+
+ggsave("Anchor_chinook_plots/Mean_june_decades.jpeg", plot=last_plot())
+
+jul <- decade2 %>% filter(month==7)
+ggplot(data=jul) + geom_sf(aes(fill=dec_mn)) + 
+    scale_fill_gradient(name = "Temperature (Celsius)", low = "blue", high = "red") + facet_wrap(~decade) +
+   labs(title="Mean July temperatures by decade", x="Longitude", y="Latitude")
+
+ggsave("Anchor_chinook_plots/Mean_july_decades.jpeg", plot=last_plot())
+
+aug <- decade2 %>% filter(month==8)
+ggplot(data=aug) + geom_sf(aes(fill=dec_mn)) + 
+    scale_fill_gradient(name = "Temperature (Celsius)", low = "blue", high = "red") + facet_wrap(~decade) +
+   labs(title="Mean August temperatures by decade", x="Longitude", y="Latitude")
+
+ggsave("Anchor_chinook_plots/Mean_aug_decades.jpeg", plot=last_plot())
+
+sep <-  decade2 %>% filter(month==9)
+ggplot(data=sep) + geom_sf(aes(fill=dec_mn)) + 
+    scale_fill_gradient(name = "Temperature (Celsius)", low = "blue", high = "red") + facet_wrap(~decade) +
+   labs(title="Mean September temperatures by decade", x="Longitude", y="Latitude")
+
+ggsave("Anchor_chinook_plots/Mean_sep_decades.jpeg", plot=last_plot())
+```
+

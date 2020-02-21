@@ -21,134 +21,299 @@ library(knitr)
 library(magick)
 library(gganimate)
 library(transformr)
+library(kableExtra)
 ```
 
-# Exploring thermal niche for salmon
-
-Load predictions data frame.
+# Thermal niche summaries for Chinook Salmon
+Spawning habitat will be summarized for July, August, and September, whereas rearing habitat is summarized for June, July, and August.
 
 ```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE}
+#Load predictions data frame.
 load(file = "output/preds.Rdata")
 
 #add month and decadal variable and filter on chinook
-K_p <- preds %>% mutate(month=month(date)) %>% mutate(decade=case_when(year< 1990 ~ 1980, year >= 1990 & year < 2000 ~ 1990, year >=2000 & year < 2010 ~ 2000, year>2009 ~ 2010)) %>% filter(K_p == 1)
+K_p <- preds %>% mutate(month=month(date)) %>% mutate(decade=case_when(year< 1990 ~ 1980, year >= 1990 & year < 2000 ~ 1990,
+                year >=2000 & year < 2010 ~ 2000, year>2009 ~ 2010)) %>% filter(K_p == 1)
+
+save(K_p, file = "output/K_p.Rdata")
 
 K_s <- K_p %>% filter (K_s==1) %>% filter(month>=7)
+save(K_s, file = "output/K_s.Rdata")
 
 K_r <- K_p %>% filter (K_r==1) %>% filter(month>=6 & month<=8)
-```
-
-Create Table summaries
-https://cran.r-project.org/web/packages/arsenal/vignettes/tableby.html
-
-```{r, results="asis", echo=FALSE, warning=FALSE, message=FALSE, error=FALSE}
-
-#Change working directory to output plots
-setwd("W:/GitHub/Temperature_Data/Anchor_chinook_plots")
-
-#June summary
-table_K_p6 <- K_p %>% filter(month==6) %>% select(preds, month, year, decade)
-table1 <- tableby(decade ~ preds , data=table_K_p6)
-summary(table1, title = "June Chinook spawning summary", text=TRUE)
-
-#July summary
-table_K_p7 <- K_p %>% filter(month==7) %>% select(preds, month, year, decade)
-table1 <- tableby(decade ~ preds , data=table_K_p7)
-summary(table1, title = "July Chinook spawning summary")
-
-#August summary
-table_K_p8 <- K_p %>% filter(month==8) %>% select(preds, month, year, decade)
-table2 <- tableby(decade ~ preds , data=table_K_p8)
-summary(table2, title = "August Chinook spawning summary")
-
-#September summary
-table_K_p9 <- K_p %>% filter(month==9) %>% select(preds, month, year, decade)
-table3 <- tableby(decade ~ preds , data=table_K_p9)
-summary(table3, title = "September Chinook spawning summary")
-
+save(K_r, file = "output/K_r.Rdata")
 ```
 
 
-#Plot average daily temperatures across 38 year period
+##Interannual Variability of all Chinook habitat
+To summarize interannual variability of Chinook habitat we averaged temperatures from June 1 - September 30 for each year and plotted the results. Stanadard deviation of yearly averages represent the spatial variability of RCAs. 
 ```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE, fig.align="center", fig.width=6, fig.asp=1}
-#having trouble with filepath for ggsave - so overwriting working directory within each chunk
-#Change working directory to output plots
-setwd("W:/GitHub/Temperature_Data/Anchor_chinook_plots")
+#How about looking at interannual variability
+interannual <- K_p %>% group_by(year) %>% mutate(yr_mn=mean(preds), yr_sd=sd(preds)) 
+
+ggplot(data=interannual) +
+  geom_line(aes(x = year, y = yr_mn))  + geom_smooth(aes(x = year, y = yr_mn),method = "lm") +
+  labs(x="Year", y="Stream Temperature")+
+  ggtitle("Mean annual stream temperatures for Chinook habitat") 
+
+ggplot(data=interannual) +
+  geom_line(aes(x = year, y = yr_sd)) + geom_smooth(aes(x = year, y = yr_sd),method = "lm") +
+  labs(x="Year", y="Standard Deviation of Stream Temperatures")+
+  ggtitle("Variability of mean annual temperatures among RCAs") 
+
+#explore another table method
+tab <- K_p %>% group_by(year) %>% summarize(mean = mean(preds), std=sd(preds))
+tab %>% knitr::kable(caption = "Mean annual temperatures for Chinook habitat", digits = 2) %>%     kableExtra::kable_styling(bootstrap_options = "striped", full_width = TRUE)
+
+```
+##Interannual variability of monthly temperatures
+Average monthly temperatures were summ
+```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE, fig.align="center", fig.width=6, fig.asp=1}
+#How about looking at interannual variability
+intermonth <- K_p %>% group_by(year, month) %>% mutate(mth_mn=mean(preds), mth_sd=sd(preds)) 
+
+intermonth$month2 <- factor(intermonth$month, labels=c("June", "July", "August", "September"))
+
+ggplot(data=intermonth) +
+  geom_line(aes(x = year, y =mth_mn))  +
+  labs(x="Year", y="Average Stream Temperature")+
+  ggtitle("Mean monthly stream temperatures for Chinook presence habitat") +
+   facet_grid(~month2) 
+
+ggplot(data=intermonth) +
+  geom_line(aes(x = year, y = mth_sd))  + 
+  labs(x="Year", y="SD of Stream Temperature") + 
+   ggtitle("Variability of mean monthly stream temperatures among RCAs") +
+   facet_grid(~month2) 
+
+#explore another table method
+tab1 <- K_p %>% group_by(year, month) %>% summarize(mean = mean(preds), std=sd(preds))
+
+Junt <- tab1 %>% filter(month==6)
+Junt %>% knitr::kable(caption = "Mean June temperatures for Chinook habitat", digits = 2) %>%     kableExtra::kable_styling(bootstrap_options = "striped", full_width = TRUE)
+
+Jult <- tab1 %>% filter(month==7)
+Jult %>% knitr::kable(caption = "Mean July temperatures for Chinook habitat", digits = 2) %>%     kableExtra::kable_styling(bootstrap_options = "striped", full_width = TRUE)
+
+Aug <- tab1 %>% filter(month==8)
+Aug %>% knitr::kable(caption = "Mean August temperatures for Chinook habitat", digits = 2) %>%     kableExtra::kable_styling(bootstrap_options = "striped", full_width = TRUE)
+
+Sep <- tab1 %>% filter(month==9)
+Sep %>% knitr::kable(caption = "Mean September temperatures for Chinook habitat", digits = 2) %>%     kableExtra::kable_styling(bootstrap_options = "striped", full_width = TRUE)
+```
+
+
+
+#Mean daily temperatures across 38 year period
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE, fig.align="center", fig.width=6, fig.asp=1}
 
 #Chinook presence
 mean_p <- K_p %>% group_by(day) %>% summarize(mean_day = mean(preds), sd_p = sd(preds)) 
 
 ggplot(data=mean_p) +
-  geom_smooth(aes(x = day, y = mean_day), show.legend = FALSE) + 
+  geom_smooth(aes(x = day, y = mean_day), show.legend = FALSE) + labs(x= "Day of Year", y="Stream Temperature") +
   ggtitle("Mean daily predictions 1980-2018 for Chinook presence habitat") 
 
-ggsave("Chinook Presence: Mean daily temperature 1980-2018.jpeg",  plot=last_plot())
+ggsave("Anchor_chinook_plots/Chinook Presence: Mean daily temperature 1980-2018.jpeg",  plot=last_plot())
 
 #Chinook spawning
 mean_s <- K_s %>% group_by(day) %>% 
   summarize(mean_day = mean(preds), sd_p = sd(preds))
 
 ggplot(data=mean_s) +
-  geom_smooth(aes(x = day, y = mean_day), show.legend = FALSE) + 
+  geom_smooth(aes(x = day, y = mean_day), show.legend = FALSE) + labs(x= "Day of Year", y="Stream Temperature") +
   ggtitle("Mean daily predictions 1980-2018 for Chinook spawning") 
 
-ggsave("Chinook Spawning: Mean daily temperature 1980-2018.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Chinook Spawning: Mean daily temperature 1980-2018.jpeg", plot=last_plot())
 
 #Chinook rearing
 mean_r <- K_r %>% group_by(day) %>%
   summarize(mean_day = mean(preds), sd_p = sd(preds))
   
 ggplot(data=mean_r) +
-  geom_smooth(aes(x = day, y = mean_day), show.legend = FALSE) + 
+  geom_smooth(aes(x = day, y = mean_day), show.legend = FALSE) + labs(x= "Day of Year", y="Stream Temperature") +
   ggtitle("Mean daily predictions 1980-2018 for Chinook rearing") 
 
-ggsave("Chinook Rearing: Mean daily temperature 1980-2018.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Chinook Rearing: Mean daily temperature 1980-2018.jpeg", plot=last_plot())
 
 
 ```
-
-
-Plot yearly summaries faceted by decade
+#histograms of percent habitat for each degree celcius - Chinook Presence habitat
 ```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE, fig.align="center", fig.width=6, fig.asp=1}
-#Change working directory to output plots
-setwd("W:/GitHub/Temperature_Data/Anchor_chinook_plots")
+hist <- K_p %>% group_by(rca_id, month, decade) %>% summarize(mth_mn=mean(preds)) %>% 
+  mutate(bin=case_when(mth_mn>=1 & mth_mn<2 ~ 1, mth_mn>=2 & mth_mn<3 ~ 2, mth_mn>=3 & mth_mn<4 ~ 3,
+                                     mth_mn>=4 & mth_mn<5 ~ 4, mth_mn>=5 & mth_mn<6 ~ 5, mth_mn>=6 & mth_mn<7 ~ 6,
+                                     mth_mn>=7 & mth_mn<8 ~ 7, mth_mn>=8 & mth_mn<9 ~ 8, mth_mn>=9 & mth_mn<10 ~ 9,
+                                     mth_mn>=10 & mth_mn<11 ~ 10, mth_mn>=11 & mth_mn<12 ~ 11, mth_mn>=12 & mth_mn<13 ~ 12,
+                                     mth_mn>=13 & mth_mn<14 ~ 13, mth_mn>=14 & mth_mn<15 ~ 14))
+
+#calculate total chinook presence habitat = 321262.5
+total <- K_p %>%  filter(year==1980 & day==220) %>% summarize(total_hab=sum(reach_length))
+
+len <- K_p %>% distinct(rca_id, reach_length) 
+
+hist2 <- left_join(hist, len, by="rca_id") %>% group_by(decade, month, bin) %>% summarize(bin_total=sum(reach_length)) %>% 
+        mutate(percent=(bin_total/321262.5)*100) 
+
+
+#June
+jun <- hist2 %>% filter(month==6)
+
+ggplot(data=jun) + geom_bar(aes(x=bin, y=percent, fill=as.factor(decade)), stat = "identity")+
+  facet_wrap(~decade) + labs(x="Temperature", y="Percent total habitat", title="Mean June Stream Temperatures")+
+  scale_fill_discrete(name="Decade")+ scale_x_continuous(breaks = c(2,4,6,8,10,12,14))
+
+#July
+jul <- hist2 %>% filter(month==7)
+
+ggplot(data=jul) + geom_bar(aes(x=bin, y=percent, fill=as.factor(decade)), stat = "identity")+
+  facet_wrap(~decade) + labs(x="Temperature", y="Percent total habitat", title="Mean July Stream Temperatures")+
+  scale_fill_discrete(name="Decade")+ scale_x_continuous(breaks = c(2,4,6,8,10,12,14))
+
+#aug
+aug <- hist2 %>% filter(month==8)
+
+ggplot(data=aug) + geom_bar(aes(x=bin, y=percent, fill=as.factor(decade)), stat = "identity")+
+  facet_wrap(~decade) + labs(x="Temperature", y="Percent total habitat", title="Mean August Stream Temperatures")+
+  scale_fill_discrete(name="Decade")+ scale_x_continuous(breaks = c(2,4,6,8,10,12,14))
+
+#sep
+sep <- hist2 %>% filter(month==9)
+
+ggplot(data=sep) + geom_bar(aes(x=bin, y=percent, fill=as.factor(decade)), stat = "identity")+
+  facet_wrap(~decade) + labs(x="Temperature", y="Percent total habitat", title="Mean September Stream Temperatures")+
+  scale_fill_discrete(name="Decade")+ scale_x_continuous(breaks = c(2,4,6,8,10,12,14))
+
+
+```
+#histograms of percent habitat for each degree celcius - Chinook Spawning habitat
+```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE, fig.align="center", fig.width=6, fig.asp=1}
+hist_s <- K_s %>% group_by(rca_id, month, decade) %>% summarize(mth_mn=mean(preds)) %>% 
+  mutate(bin=case_when(mth_mn>=1 & mth_mn<2 ~ 1, mth_mn>=2 & mth_mn<3 ~ 2, mth_mn>=3 & mth_mn<4 ~ 3,
+                                     mth_mn>=4 & mth_mn<5 ~ 4, mth_mn>=5 & mth_mn<6 ~ 5, mth_mn>=6 & mth_mn<7 ~ 6,
+                                     mth_mn>=7 & mth_mn<8 ~ 7, mth_mn>=8 & mth_mn<9 ~ 8, mth_mn>=9 & mth_mn<10 ~ 9,
+                                     mth_mn>=10 & mth_mn<11 ~ 10, mth_mn>=11 & mth_mn<12 ~ 11, mth_mn>=12 & mth_mn<13 ~ 12,
+                                     mth_mn>=13 & mth_mn<14 ~ 13, mth_mn>=14 & mth_mn<15 ~ 14))
+
+#calculate total chinook spawning habitat = 	284418.7
+total_s <- K_s %>%  filter(year==1980 & day==220) %>% summarize(total_hab=sum(reach_length))
+
+len_s <- K_s %>% distinct(rca_id, reach_length) 
+
+hist2_s <- left_join(hist_s, len_s, by="rca_id") %>% group_by(decade, month, bin) %>% 
+    summarize(bin_total=sum(reach_length)) %>% 
+        mutate(percent=(bin_total/284418.7)*100) 
+
+#July
+jul_s <- hist2_s %>% filter(month==7)
+
+ggplot(data=jul_s) + geom_bar(aes(x=bin, y=percent, fill=as.factor(decade)), stat = "identity")+
+  facet_wrap(~decade) + 
+  labs(x="Temperature", y="Percent total habitat", title="Mean July Stream Temperatures for Chinook Spawning habitat")+
+  scale_fill_discrete(name="Decade") + scale_x_continuous(breaks = c(2,4,6,8,10,12,14))
+
+#aug
+aug_s <- hist2_s %>% filter(month==8)
+
+ggplot(data=aug_s) + geom_bar(aes(x=bin, y=percent, fill=as.factor(decade)), stat = "identity")+
+  facet_wrap(~decade) + 
+  labs(x="Temperature", y="Percent total habitat", title="Mean August Stream Temperatures for Chinook Spawning habitat")+
+  scale_fill_discrete(name="Decade")+ scale_x_continuous(breaks = c(2,4,6,8,10,12,14))
+
+#sep
+sep_s <- hist2_s %>% filter(month==9)
+
+ggplot(data=sep_s) + geom_bar(aes(x=bin, y=percent, fill=as.factor(decade)), stat = "identity")+
+  facet_wrap(~decade) + 
+  labs(x="Temperature", y="Percent total habitat", title="Mean September Stream Temperatures for Chinook spawning habitat")+
+  scale_fill_discrete(name="Decade")+ scale_x_continuous(breaks = c(2,4,6,8,10,12,14))
+```
+
+#histograms of percent habitat for each degree celcius - Chinook Rearing habitat
+```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE, fig.align="center", fig.width=6, fig.asp=1}
+hist_r <- K_r %>% group_by(rca_id, month, decade) %>% summarize(mth_mn=mean(preds)) %>% 
+  mutate(bin=case_when(mth_mn>=1 & mth_mn<2 ~ 1, mth_mn>=2 & mth_mn<3 ~ 2, mth_mn>=3 & mth_mn<4 ~ 3,
+                                     mth_mn>=4 & mth_mn<5 ~ 4, mth_mn>=5 & mth_mn<6 ~ 5, mth_mn>=6 & mth_mn<7 ~ 6,
+                                     mth_mn>=7 & mth_mn<8 ~ 7, mth_mn>=8 & mth_mn<9 ~ 8, mth_mn>=9 & mth_mn<10 ~ 9,
+                                     mth_mn>=10 & mth_mn<11 ~ 10, mth_mn>=11 & mth_mn<12 ~ 11, mth_mn>=12 & mth_mn<13 ~ 12,
+                                     mth_mn>=13 & mth_mn<14 ~ 13, mth_mn>=14 & mth_mn<15 ~ 14))
+
+#calculate total chinook rearing habitat = 	176816.9
+total_r <- K_r %>%  filter(year==1980 & day==220) %>% summarize(total_hab=sum(reach_length))
+
+len_r <- K_r %>% distinct(rca_id, reach_length) 
+
+hist2_r <- left_join(hist_r, len_r, by="rca_id") %>% group_by(decade, month, bin) %>% 
+  summarize(bin_total=sum(reach_length)) %>% 
+        mutate(percent=(bin_total/176816.9)*100)
+
+#June
+jun_r <- hist2_r %>% filter(month==6)
+
+ggplot(data=jun_r) + geom_bar(aes(x=bin, y=percent, fill=as.factor(decade)), stat = "identity")+
+  facet_wrap(~decade) + 
+  labs(x="Temperature", y="Percent total habitat", title="Mean June Stream Temperatures for Chinook   Rearing habitat")+  scale_fill_discrete(name="Decade")+ scale_x_continuous(breaks = c(2,4,6,8,10,12,14))
+
+#July
+jul_r <- hist2_r %>% filter(month==7)
+
+ggplot(data=jul_r) + geom_bar(aes(x=bin, y=percent, fill=as.factor(decade)), stat = "identity")+
+  facet_wrap(~decade) + 
+  labs(x="Temperature", y="Percent total habitat", title="Mean July Stream Temperatures for Chinook Rearing habitat")+
+  scale_fill_discrete(name="Decade")+ scale_x_continuous(breaks = c(2,4,6,8,10,12,14))
+
+#aug
+aug_r <- hist2_r %>% filter(month==8)
+
+ggplot(data=aug_r) + geom_bar(aes(x=bin, y=percent, fill=as.factor(decade)), stat = "identity")+
+  facet_wrap(~decade) + 
+  labs(x="Temperature", y="Percent total habitat", title="Mean August Stream Temperatures for Chinook Rearing habitat")+
+  scale_fill_discrete(name="Decade")+ scale_x_continuous(breaks = c(2,4,6,8,10,12,14))
+
+```
+
+##Daily mean tempertures for each year (1980-2018)
+```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE, fig.align="center", fig.width=6, fig.asp=1}
 
 # Summarize mean and sd of predictions by day and year - not sure how to retain variables when using the summarize function?? so create decade variable within
 
 all_years <- K_p %>% group_by(day, year) %>% 
   summarize(mean_yr = mean(preds), sd_yr = sd(preds))
-  
+
 ggplot(data=all_years) +
   geom_smooth(aes(x = day, y = mean_yr, color = as.factor(year)), se=FALSE, show.legend = FALSE) + 
   ggtitle("Annual mean of daily predictions") 
 
-ggsave("Annual means.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Annual means.jpeg", plot=last_plot())
 
 decade <- K_p %>% group_by(day, year) %>% 
-  summarize(mean_yr = mean(preds), sd_yr = sd(preds)) %>% mutate(decade=case_when(year< 1990 ~ 1980, 
-  year >= 1990 & year < 2000 ~ 1990, year >=2000 & year < 2010 ~ 2000, year>2009 ~ 2010)) 
+  summarize(mean_yr = mean(preds), sd_yr = sd(preds)) %>% 
+  mutate(decade=case_when(year< 1990 ~ 1980, year >= 1990 & year < 2000 ~ 1990, 
+                          year >=2000 & year < 2010 ~ 2000, year>2009 ~ 2010))
 
 ggplot(data=decade) +
   geom_smooth(aes(x = day, y = mean_yr, color = as.factor(year)), show.legend = FALSE) + facet_wrap(~decade) + 
   ggtitle("Annual mean of daily predictions by decade") 
 
-ggsave("Annual means by decade.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Annual means by decade.jpeg", plot=last_plot())
 
 decade_noSE <- K_p %>% group_by(day, year) %>% 
-  summarize(mean_yr = mean(preds), sd_yr = sd(preds)) %>% mutate(decade=case_when(year< 1990 ~ 1980, 
-  year >= 1990 & year < 2000 ~ 1990, year >=2000 & year < 2010 ~ 2000, year>2009 ~ 2010)) 
+  summarize(mean_yr = mean(preds), sd_yr = sd(preds))  %>% 
+  mutate(decade=case_when(year< 1990 ~ 1980, year >= 1990 & year < 2000 ~ 1990, 
+                          year >=2000 & year < 2010 ~ 2000, year>2009 ~ 2010))
 
 ggplot(data=decade_noSE) +
   geom_smooth(aes(x = day, y = mean_yr, color = as.factor(year)), se=FALSE, show.legend = FALSE) + facet_wrap(~decade) +
   ggtitle("Annual mean of daily predictions by decade no SE") 
 
-ggsave("Annual means by decade no SE.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Annual means by decade no SE.jpeg", plot=last_plot())
 ```
 
-Animate by Year using gganimate
-https://www.datanovia.com/en/blog/gganimate-how-to-create-plots-with-beautiful-animation-in-r/
+
 ```{r}
-#try gganimate method
+#Animate by Year using gganimate
+#https://www.datanovia.com/en/blog/gganimate-how-to-create-plots-with-beautiful-animation-in-r/
 #shadow fade with old years in background
 theme_set(theme_bw())
 ani <- ggplot(all_years, aes(x = day, y = mean_yr, color = as.factor(year))) +
@@ -175,11 +340,16 @@ ani2 + transition_reveal(day2)
 
 ```
 
-Animate months by decade
+##Animate months by decade
 ```{r}
-
 all_years22 <- K_p2 %>% group_by(month, day2, decade) %>% 
   summarize(mean_mth_dec = mean(preds))
+
+ggplot(all_years22, aes(x = day2, y = mean_mth_dec, color=factor(month))) +
+  geom_line() +  facet_wrap(~decade) +
+  labs(x = "Day of Month", y = "Stream Temperature", title = "Average Daily Temperatures by decade") 
+
+ggsave("Anchor_chinook_plots/Average Daily Temps Animated.jpeg", plot=last_plot())
 
 ani3 <- ggplot(all_years22, aes(x = day2, y = mean_mth_dec, color=factor(month))) +
   geom_line() + 
@@ -190,11 +360,8 @@ ani3 + transition_reveal(day2) + facet_wrap(~decade)
 
 
 
-Summarize predictions by decades and plot
+##Summarize predictions by decades and plot
 ```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE, fig.align="center", fig.width=6, fig.asp=1}
-#Change working directory to output plots
-setwd("W:/GitHub/Temperature_Data/Anchor_chinook_plots")
-
 #Summarize mean and sd of preds by day and decade
 pred_decade <- K_p %>% group_by(decade, day) %>% 
   summarize(mean_dec = mean(preds), sd_dec = sd(preds))
@@ -203,7 +370,7 @@ ggplot(data=pred_decade) +
   geom_smooth(aes(x = day, y = mean_dec, color = as.factor(decade))) +
   ggtitle("Decadal mean of daily predictions") 
 
-ggsave("Decadal mean of daily predictions.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Decadal mean of daily predictions.jpeg", plot=last_plot())
 
 #Summarize mean and sd of preds by day and decade - no SE
 pred_decade_noSE <- K_p %>% group_by(decade, day) %>% 
@@ -213,7 +380,7 @@ ggplot(data=pred_decade_noSE) +
   geom_smooth(aes(x = day, y = mean_dec, color = as.factor(decade)), se=FALSE) +
   ggtitle("Decadal mean of daily predictions no SE") 
 
-ggsave("Decadal mean of daily predictions no SE.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Decadal mean of daily predictions no SE.jpeg", plot=last_plot())
 
 
 #Summarize mean and sd of preds by day and decade - facet by decade
@@ -224,17 +391,15 @@ ggplot(data=pred_decade2) +
   geom_smooth(aes(x = day, y = mean_dec)) + facet_wrap(~decade)+
   ggtitle("Decadal mean of daily predictions") 
 
-ggsave("Annual means by decade facet by decade.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Annual means by decade facet by decade.jpeg", plot=last_plot())
 
 ```
 
 
-Calculate and plot Temperature Anomolies!
-Calculate annual mean 1980-2018 then yearly differences between 38 year mean. 
-```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE, fig.align="center", fig.width=6, fig.asp=1}
-#Change working directory to output plots
-setwd("W:/GitHub/Temperature_Data/Anchor_chinook_plots")
+##Calculate and plot Temperature Anomolies!
 
+```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE, fig.align="center", fig.width=6, fig.asp=1}
+#Calculate annual mean 1980-2018 then yearly differences between 38 year mean. 
 #calculate average daily predictions over entire 38 year period 
 pred_anom1 <- K_p %>% 
   group_by(day) %>% 
@@ -252,7 +417,7 @@ ggplot(data=anomoly) +
   geom_smooth(aes(x = day, y = anom_yr, color = as.factor(year)), show.legend = FALSE) + facet_wrap(~decade) +
   ggtitle("Anomolies by day and year faceted by decade") 
 
-ggsave("Anomolies by day and year faceted by decade.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Anomolies by day and year faceted by decade.jpeg", plot=last_plot())
 
 
 #summarize anomolies by year and plot by decade - no SE
@@ -264,15 +429,12 @@ ggplot(data=anomoly_noSE) +
   geom_smooth(aes(x = day, y = anom_yr, color = as.factor(year)), se=FALSE, show.legend = FALSE) + facet_wrap(~decade)  +
   ggtitle("Anomolies by day and year faceted by decade") 
 
-ggsave("Anomolies by day and year no SE faceted by decade.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Anomolies by day and year no SE faceted by decade.jpeg", plot=last_plot())
 
 
 ```
 #Filter for spawning time period - Chinook reach their spawning areas between July and September  - DESCENDING LIMB!!!!
 ```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE, fig.align="center", fig.width=6, fig.asp=1}
-#Change working directory to output plots
-setwd("W:/GitHub/Temperature_Data/Anchor_chinook_plots")
-
 # Summarize mean and sd of predictions by day and year - not sure how to retain variables when using the summarize function?? so create decade variable within
 
 CH_s <- K_s %>% group_by(day, year) %>% 
@@ -282,7 +444,7 @@ ggplot(data=CH_s) +
   geom_smooth(aes(x = day, y = mean_yr, color = as.factor(year)), se=FALSE, show.legend = FALSE)  +
   ggtitle("Annual mean temperatures of Chinook spawning") 
 
-ggsave("Annual mean temperatures of Chinook spawning.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Annual mean temperatures of Chinook spawning.jpeg", plot=last_plot())
 
 CH_s_dec <- K_s %>% group_by(day, year) %>% 
   summarize(mean_yr = mean(preds), sd_yr = sd(preds)) %>% mutate(decade=case_when(year< 1990 ~ 1980, 
@@ -292,7 +454,7 @@ ggplot(data=CH_s_dec) +
   geom_smooth(aes(x = day, y = mean_yr, color = as.factor(year)), show.legend = FALSE) + facet_wrap(~decade) +
   ggtitle("Annual mean temperatures of Chinook spawning faceted by decade") 
 
-ggsave("Annual mean temperatures of Chinook spawning faceted by decade.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Annual mean temperatures of Chinook spawning faceted by decade.jpeg", plot=last_plot())
 
 CH_s_dec_noSE <- K_s %>% group_by(day, year) %>% 
   summarize(mean_yr = mean(preds), sd_yr = sd(preds)) %>% mutate(decade=case_when(year< 1990 ~ 1980, 
@@ -302,15 +464,12 @@ ggplot(data=CH_s_dec_noSE) +
   geom_smooth(aes(x = day, y = mean_yr, color = as.factor(year)), se=FALSE, show.legend = FALSE) + facet_wrap(~decade) +
   ggtitle("Annual mean temperatures of Chinook spawning faceted by decade no SE") 
 
-ggsave("Annual mean temperatures of Chinook spawning faceted by decade no SE.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Annual mean temperatures of Chinook spawning faceted by decade no SE.jpeg", plot=last_plot())
 
 
 ```
 #Filter for core rearing - June-August  
 ```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE, fig.align="center", fig.width=6, fig.asp=1}
-#Change working directory to output plots
-setwd("W:/GitHub/Temperature_Data/Anchor_chinook_plots")
-
 # Summarize mean and sd of predictions by day and year - not sure how to retain variables when using the summarize function?? so create decade variable within
 
 CH_r <- K_r %>% group_by(day, year) %>% 
@@ -320,7 +479,7 @@ ggplot(data=CH_r) +
   geom_smooth(aes(x = day, y = mean_yr, color = as.factor(year)), se=FALSE, show.legend = FALSE)+
   ggtitle("Annual mean temperatures of Chinook rearing") 
 
-ggsave("Annual mean temperatures of Chinook rearing.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Annual mean temperatures of Chinook rearing.jpeg", plot=last_plot())
 
 CH_r_dec <- K_r %>% group_by(day, year) %>% 
   summarize(mean_yr = mean(preds), sd_yr = sd(preds)) %>% mutate(decade=case_when(year< 1990 ~ 1980, 
@@ -330,7 +489,7 @@ ggplot(data=CH_r_dec) +
   geom_smooth(aes(x = day, y = mean_yr, color = as.factor(year)), show.legend = FALSE) + facet_wrap(~decade)+
   ggtitle("Annual mean temperatures of Chinook rearing faceted by decade") 
 
-ggsave("Annual mean temperatures of Chinook rearing faceted by decade.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Annual mean temperatures of Chinook rearing faceted by decade.jpeg", plot=last_plot())
 
 CH_r_dec_noSE <- K_r %>% group_by(day, year) %>% 
   summarize(mean_yr = mean(preds), sd_yr = sd(preds)) %>% mutate(decade=case_when(year< 1990 ~ 1980, 
@@ -340,7 +499,7 @@ ggplot(data=CH_r_dec_noSE) +
   geom_smooth(aes(x = day, y = mean_yr, color = as.factor(year)), se=FALSE, show.legend = FALSE) + facet_wrap(~decade)+
   ggtitle("Annual mean temperatures of Chinook rearing faceted by decade no SE") 
 
-ggsave("Annual mean temperatures of Chinook rearing faceted by decade no SE.jpeg", plot=last_plot())
+ggsave("Anchor_chinook_plots/Annual mean temperatures of Chinook rearing faceted by decade no SE.jpeg", plot=last_plot())
 
 
 ```

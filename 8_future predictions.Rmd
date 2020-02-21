@@ -1,0 +1,43 @@
+---
+title: "6_future predictions"
+author: "Leslie Jones"
+date: "1/30/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(lubridate)
+library(rgdal)
+library(zoo)
+library(sf)
+library(corrplot)
+library(MuMIn)
+library(ape)
+library(readxl)
+library(VIF)
+library(tidyverse)
+library(jtools)
+
+library(readr)
+snap <- read_csv("Data/future/SNAP_comm_charts_export_20160926_fix_040819.csv")
+View(snap)
+```
+
+## Filter on Anchor Point, AK
+
+
+```{r cars}
+Anchor <- snap %>% filter(community=="Anchor Point" & type=="Temperature") %>% select(community, type, daterange, scenario, junMean, julMean,
+                                                                                      augMean, sepMean)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
