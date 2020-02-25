@@ -17,17 +17,29 @@ library(MuMIn)
 library(ape)
 library(readxl)
 # library(VIF)
-library(tidyverse)
 # library(jtools)
 library(nlme)
 library(car)
 library(corrplot)
 library(mgcv)
 library(visreg)
+library(GGally)
+library(tidyverse)
 
 
 load(file = "output/temp.Rdata")
 # load(file = "output/tempMS.Rdata")
+
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- abs(cor(x, y))
+    txt <- format(c(r, 0.123456789), digits = digits)[1]
+    txt <- paste0(prefix, txt)
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = cex.cor * r)
+}
 
 ```
 # Explore covariates to include in model
@@ -57,7 +69,36 @@ summary(temp_rca)
 #hist(temp$sweA1)
 ```
 
-Look at linear model for 2 seasons based on ascending and descending limb of stream temperature and air temperature distribution: see 2_Data and model exploration.Rmd - split is julian day 201.  Will have 2 seasons June 1 - July 20: (152-201) and july 21 - September 30: (202-303)
+## Pairplot of spatial covariates
+
+STOPPED HERE, PARING DOWN COVARIATES BEFORE DOING MODEL SELECTION.
+
+
+```{r}
+
+temp %>% 
+  distinct(reach_slope, reach_length, Forest, Shrub, Wetland, Riparian, 
+           rca_elev_min, rca_elev_max, rca_elev_mn, 
+           ca_elev_mn, cont_area, elev_delta, sweA1) %>% 
+  cor(.) %>% 
+  corrplot.mixed(.)
+
+```
+
+Alternatively, a pairplot so can see the data points.
+
+```{r}
+temp %>% 
+  distinct(reach_slope, reach_length, Forest, Shrub, Wetland, Riparian, 
+           rca_elev_min, rca_elev_max, rca_elev_mn, 
+           ca_elev_mn, cont_area, elev_delta, sweA1) %>% 
+  pairs(upper.panel = panel.cor, lower.panel = panel.smooth)
+  
+```
+
+Look at linear model for 2 seasons based on ascending and descending limb of stream temperature and air temperature distribution: see 2_Data and model exploration.Rmd - split is julian day 201.  Will have 2 seasons June 1 - July 20: (152-201) and july 21 - September 30: (202-303).
+
+We also decided to remove Stariski Creek from the model because ... we don't have enough data... not sure or prediction accuracy was low. Not sure why we removed APU1? That is located at the confluence next to Sue's long-term monitoring site. Maybe we had high prediction error for this site?
 
 ```{r}
 spring <- temp %>%
@@ -102,8 +143,11 @@ model.rmse <- function(x) {
 Check VIF for all covariates in full linear model without any random effect. Decided to drop forest and then all remaining covariates have VIF < 3.
 
 ```{r}
-full.model.noint <- lm(meanT ~ tair + sweM1 + swe + prcp + slope_P + elev_mean + cont_area + wetland + shrub + forest, 
-                 data = spring_meanT, na.action = "na.fail")
+
+full.model.noint <- lm(meanT ~ tair3 + sweA1 + swe + prcp5 + reach_slope + 
+                         Wetland + Shrub + Forest + Riparian + rca_elev_mn + 
+                         ca_elev_mn + cont_area + elev_delta,
+                       data = spring_meanT, na.action = "na.fail")
 
 vif(full.model.noint)
 

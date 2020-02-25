@@ -17,12 +17,13 @@ library(MuMIn)
 library(ape)
 library(readxl)
 #library(VIF)
+library(gridExtra)
 library(tidyverse)
 #library(jtools)
 ```
 
 # Database for Anchor Model
-Load data frame from 1_Creat model data frame.Rmd
+Load data frame from 1_Create model data frame.Rmd
 
 ```{r}
 load(file = "output/temp.Rdata")
@@ -37,11 +38,11 @@ Test models of stream temp with each.
 
 ```{r}
 
-cor(temp$lst2, temp$tair3, use = "pairwise.complete.obs")
+cor(temp$lst, temp$tair3, use = "pairwise.complete.obs")
 
 temp %>% 
   ggplot() +
-  geom_point(aes(x = tair3, y = lst2)) +
+  geom_point(aes(x = tair3, y = lst)) +
   geom_abline(slope = 1, intercept = 0) +
   scale_x_continuous(limits = c(0, 25)) +
   scale_y_continuous(limits = c(0, 25)) +
@@ -50,76 +51,74 @@ temp %>%
 
 ```
 
-plot LST versus stream temperature.
+Look at correlations between each air temperature covariate with stream temperature and also predictors of stream temperature.
 
 ```{r}
 temp %>% 
-  ggplot() +
-  geom_point(aes(x = lst2, y = meanT, color = as.factor(month))) +
-  facet_wrap(~Site) 
+  filter(!is.na(lst)) %>% 
+  summarize(clst = cor(lst, meanT),
+            cdm3 = cor(tair3, meanT),
+            cdm8 = cor(tair, meanT))
 
+
+lm1 <- lm(meanT ~ tair3, data = temp %>% filter(!is.na(lst)))
+lm2 <- lm(meanT ~ tair, data = temp %>% filter(!is.na(lst)))
+lm3 <- lm(meanT ~ lst, data = temp %>% filter(!is.na(lst)))
+AIC(lm1, lm2, lm3)
+
+summary(lm1)
+summary(lm2)
 ```
 
 
+## Compare 3-day and 8-day daymet air temperatures
+
+This comparison is slightly different from the one above because now we are using all daily stream temperatures. For the LST comparison, we could only use every 8 days to make the data comparable.
 
 ```{r}
 temp %>% 
-  filter(!is.na(LST)) %>% 
-  summarize(clm = cor(lst2, meanT),
-            cam = cor(tair3, meanT))
+  summarize(cdm8 = cor(tair, meanT),
+            cdm3 = cor(tair3, meanT))
 
 
-lm1 <- lm(meanT ~ tair3, data = temp %>% filter(!is.na(LST)))
-lm2 <- lm(meanT ~ lst2, data = temp %>% filter(!is.na(LST)))
+lm1 <- lm(meanT ~ tair3, data = temp)
+lm2 <- lm(meanT ~ tair, data = temp)
 AIC(lm1, lm2)
 
 summary(lm1)
+summary(lm2)
+
+
+g1 <- ggplot(data = temp, aes(x = tair3, y = meanT)) +
+  geom_point() +
+  geom_smooth() +
+  geom_abline(aes(slope = 1, intercept = 0))
+
+g2 <- ggplot(data = temp, aes(x = tair, y = meanT)) +
+  geom_point() +
+  geom_smooth() +
+  geom_abline(aes(slope = 1, intercept = 0))
+
+grid.arrange(g1,g2)
 
 ```
-
-
 
 ## Explore correlations between the covariates
 
 Spatial covariates first.
 
+
 ```{r}
+
 temp %>% 
-  distinct(reach_slope, reach_length, Forest, Shrub, Wetland, Riparian, rca_elev_min, rca_elev_max, 
-           rca_elev_mn, ca_elev_mn, cont_area, elev_delta, sweA1) %>% 
+  distinct(reach_slope, reach_length, Forest, Shrub, Wetland, Riparian, 
+           rca_elev_min, rca_elev_max, rca_elev_mn, 
+           ca_elev_mn, cont_area, elev_delta, sweA1) %>% 
   cor(.) %>% 
   corrplot.mixed(.)
-```
-
-
-For now, keep all three elevation covariates, but may need to drop one later. Also keep slope in percent, and contributing area. Convert flow accumulation to square meters to square kilometers for contributing area. 1 cell = 25 square meters and 1 square kilometer = 1,000,000 square meters.
-
-See email from Leslie on 12-20-19: "use the slope_P (percent) or slope_D (degrees) for the model. Upstream Contributing Area: Maximum flow accumulation value for RCA * multiplied by cell size."
-
-```{r}
-temp.rca <- temp.rca %>% 
-  select(Site, rca_id, sampleDate, meanT, ma_mean, slope_P, elev_mean, elev_mean_ca, 
-         elev_delta, flowacc_max) %>% 
-  mutate(cont_area = flowacc_max * 25 / 1000000)
-```
-
-Double check. Great! Maximum flow accumulation near the mouth is 580 km2 and HUC10 is 585.
-
-```{r}
-temp.rca %>% 
-  distinct(cont_area, rca_id, Site) %>% 
-  arrange(desc(cont_area))
-```
-
-
-Remove April
-
-```{r}
-
-#remove April
-temp.dm1 <- filter(temp.dm, month > 4)
 
 ```
+
 
 
 

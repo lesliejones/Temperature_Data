@@ -1,3 +1,4 @@
+
 ---
 title: "1_Create model data frame"
 author: "Becky"
@@ -127,7 +128,7 @@ Read in covariates associated with the reaches and RCAs in the geodatabase. Note
 Everything should now be in two feature classes - one for rcas and one for reaches. The only data not quite there yet are the nlcd summaries so for now summarize from Dustin's table.
 
 ```{r}
-fgdb <- "Spatial_data/Anchor.gdb"
+fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/Anchor.gdb"
 # List all feature classes in a file geodatabase
 subset(ogrDrivers(), grepl("GDB", name))
 fc_list <- ogrListLayers(fgdb)
@@ -170,7 +171,7 @@ NOTE: currently, the precip and swe are still 8-day averages, unchanged. Leslie 
 Feature classes in geodatabase with daymet data.
 
 ```{r}
-fgdb <- "Spatial_data/Anchor/anchor_DAYMET.gdb"
+fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_DAYMET.gdb"
 # List all feature classes in a file geodatabase
 subset(ogrDrivers(), grepl("GDB", name))
 fc_list <- ogrListLayers(fgdb)
@@ -294,7 +295,7 @@ temp.dm <- temp.dm %>%
 Read in LST data.
 
 ```{r}
-fgdb <- "Spatial_data/Anchor/anchor_LST.gdb"
+fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_LST.gdb"
 # List all feature classes in a file geodatabase
 subset(ogrDrivers(), grepl("GDB", name))
 fc_list <- ogrListLayers(fgdb)
