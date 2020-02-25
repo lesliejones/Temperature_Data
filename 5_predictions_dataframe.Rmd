@@ -22,7 +22,7 @@ Read in spatial covariates associated with each RCA. These are stored in two sep
 
 
 ```{r}
-fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/Anchor.gdb"
+fgdb <- "Spatial_data/Anchor//Anchor.gdb"
 # List all feature classes in a file geodatabase
 subset(ogrDrivers(), grepl("GDB", name))
 fc_list <- ogrListLayers(fgdb)
@@ -65,7 +65,7 @@ hist(salmon_rcas$cont_area)
 Read in daymet data. For now, subset to the most recent decade and only for air temperature. (Add in prcp and swe later on).
 
 ```{r}
-#fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_DAYMET.gdb"
+#fgdb <- "Spatial_data/Anchor/anchor_DAYMET.gdb"
 #subset(ogrDrivers(), grepl("GDB", name))
 #fc_list <- ogrListLayers(fgdb)
 #print(fc_list)
@@ -136,45 +136,6 @@ save(preds, file = "output/preds.Rdata")
 
 
 
-# Exploring thermal niche for salmon
-
-Load predictions data frame.
-
-```{r}
-load(file = "output/preds.Rdata")
-```
 
 
-Plot thermal niche for Chinook by life stage.
 
-```{r}
-g1 <- preds %>% 
-  filter(K_p == 1) %>% 
-  group_by(date, day, year) %>% 
-  summarize(mean_pred = mean(preds)) %>% 
-  ggplot() +
-  geom_line(aes(x = day, y = mean_pred, color = as.factor(year))) 
-g2 <- preds %>% 
-  filter(S_p == 1) %>% 
-  group_by(date, day, year) %>% 
-  summarize(mean_pred = mean(preds)) %>% 
-  ggplot() +
-  geom_line(aes(x = day, y = mean_pred, color = as.factor(year))) 
-grid.arrange(g1, g2, nrow = 1)
-```
-
-
-```{r}
-g1 <- preds %>% 
-  filter(K_p == 1) %>% 
-  group_by(day) %>% 
-  summarize(mean_pred = mean(preds),
-            sd_pred = sd(preds)) %>% 
-  ggplot() +
-  geom_ribbon(aes(x = day, ymin = mean_pred - sd_pred, ymax = mean_pred + sd_pred)) 
-```
-
-Tally total amount of habitat by temperature bins.
-
-```{r}
-```
