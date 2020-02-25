@@ -184,19 +184,17 @@ temp.rca <- temp.rca %>%
 
 ```
 
-## STILL NEED TO ADD IN PRECIP AND SWE FROM DAYMET - SKIPPING FOR NOW AND MOVING FORWARD WITH 3DAY AIR
-
 ## Merge daymet data to stream temperature data frame
 
 Read in climate covariates stored in file geodatabases that were calculated for the RCAs. These are tables that have climate information linked to the RCAs.
 
 Start with the daymet data: air, precipitation, and SWE. We are now moving forward with 3-day averaged air temperatures. The daymet date represents the middle day.
 
-NOTE: currently, the precip and swe are still 8-day averages, unchanged. Leslie is planning to sum 3 day precipitation by RCA and add that in later.
+NOTE: currently, the precip and swe are still 8-day averages, unchanged. Leslie is planning to sum 5-day precipitation by RCA and add that in later.
 
 (Previously, we were using 8-day averages to match the LST, but because daymet had a much stronger correlation with stream temperature, we are now just focussed on that dataset. In Siegel and Volk, they justified 3 day and 5 day lagged air temperatures so we are trying that out to match. Longer lags would be better for bigger systems.)
 
-
+Feature classes in geodatabase with daymet data.
 
 ```{r}
 
@@ -207,8 +205,24 @@ subset(ogrDrivers(), grepl("GDB", name))
 fc_list <- ogrListLayers(fgdb)
 print(fc_list)
 
-# Read the feature class
-daymet <- sf::st_read(dsn = fgdb, layer = "tair3_anchor_all")
+```
+
+Read in the feature class with 3-day air temperatures.
+
+```{r}
+
+dm3day <- sf::st_read(dsn = fgdb, layer = "tair3_anchor_all")
+
+dm3day <- dm3day %>% 
+  mutate(date = as.Date(date)) %>% 
+  select(-Field1)
+
+```
+
+Read in the feature class with 8-day air and 8-day swe. Don't worry about bringing in 8-day precipitation, going to move forward with summed 5-day precipitation. 
+
+```{r}
+daymet <- sf::st_read(dsn = fgdb, layer = "anchor_daymet")
 
 daymet <- daymet %>% 
   mutate(date = as.Date(date)) %>% 
@@ -217,6 +231,18 @@ daymet <- daymet %>%
 daymet %>% 
   group_by(year(date)) %>% 
   summarize(min(date), max(date))
+
+```
+
+Read in 5-day summed precipitation. First day of 5-day window, need to add four days before merging.
+
+```{r}
+
+prcp5day <- sf::st_read(dsn = fgdb, layer = "prcp5day")
+
+prcp5day <- prcp5day %>% 
+  mutate(date = as.Date(date)) %>% 
+  select(-Field1)
 
 
 ```
@@ -229,17 +255,47 @@ Call this data frame temp.dm since it will be our model using the daymet air tem
 
 ```{r}
 
-daymet <- daymet %>% 
+dm3day <- dm3day %>% 
   mutate(date_day3 = date + 1)
 
 temp.dm <- temp.rca %>% 
-  left_join(daymet %>% select(-date), by = c("rca_id" = "rca_id", "sampleDate" = "date_day3")) 
+  left_join(dm3day %>% select(-date), 
+            by = c("rca_id" = "rca_id", "sampleDate" = "date_day3")) 
 
-# rm(daymet)
+# rm(dm3day)
 ```
 
+Bring in the swe and 8-day air temperatures as well. Since now modeling daily stream temperatures, change the date so that it represents the last day of the 8-day period.
 
-## NOT YET DONE: Add in 8-day moving average of daymet temperatures because they may have a better correlation to stream temps
+From Leslie: "For the daymet data the date represents the mid-point of the 8-day series. For May 1st - average is 4 days prior and 3 days after." Email on 10/18/19.
+
+```{r}
+
+daymet <- daymet %>% 
+  mutate(date_day8 = date + 3)
+
+temp.dm <- temp.dm %>% 
+  left_join(daymet %>% select(-date, -prcp), 
+            by = c("rca_id" = "rca_id", "sampleDate" = "date_day8")) 
+
+# rm(daymet)
+
+```
+
+Bring in 5 day precipitation. Leslie says this is the first day of the 5 day window so need to add four days to match with daily mean temperatures.
+
+```{r}
+
+prcp5day <- prcp5day %>% 
+  mutate(date_day5 = date + 4)
+
+temp.dm <- temp.dm %>% 
+  left_join(prcp5day %>% select(-date), 
+            by = c("rca_id" = "rca_id", "sampleDate" = "date_day5")) 
+ 
+
+```
+
 
 Figure out pattern in missing data. All from Jan-April and Oct-Dec. We can drop those dates because we are only modeling summer stream temperatures.
 
@@ -296,6 +352,7 @@ temp.dm <- temp.dm %>%
 Read in LST data.
 
 ```{r}
+
 fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_LST.gdb"
 
 # List all feature classes in a file geodatabase
@@ -312,16 +369,17 @@ lst <- lst %>%
 
 ```
 
-Merge LST to the model data frame with daymet and spatial covariates. Leslie and Timm clarified what the date represents for LST in an email on 10/18/19: "The date in the LST file name represents the first day of a consecutive 8 day period". Add a date to match the 8 day moving average of stream temperature before merging.
+Merge LST to the model data frame with daymet and spatial covariates. Leslie and Timm clarified what the date represents for LST in an email on 10/18/19: "The date in the LST file name represents the first day of a consecutive 8 day period". Add a date to match the 8 day moving average of stream temperature before merging. This will be the last day in the 8-day window and so can now be used to model daily mean temperatures.
 
 ```{r}
 
 lst <- lst %>% 
-  mutate(date_day8 = date + 7)
+  mutate(date_day8 = date + 7,
+         lst = LST * 0.02 - 273.15)
 
 temp.dm <- temp.dm %>% 
-  left_join(lst %>% select(-date), by = c("rca_id" = "rca_id", "sampleDate" = "date_day8")) %>% 
-  mutate(lst2 = LST * 0.02 - 273.15)
+  left_join(lst %>% select(-date, -LST), 
+            by = c("rca_id" = "rca_id", "sampleDate" = "date_day8"))
 
 ```
 
