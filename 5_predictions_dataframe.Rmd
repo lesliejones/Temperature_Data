@@ -37,12 +37,15 @@ Create a new data frame that will be used for predictions. Use the flowacc value
 ```{r}
 new_data_sp <- rca_reach %>% 
   select(rca_id = reach_id, reach_slope, reach_length, Forest, Shrub, Wetland, Riparian) 
+
 new_data_sp <- new_data_sp %>% 
   left_join(rcas %>% select(rca_id:ca_elev_mn)) %>% 
   mutate(cont_area = flowacc * 25 / 1000000)
 ```
 
-## Filter on salmon rcas
+## NOT DONE: Filter on salmon rcas
+
+Note (2/27/20): Decided to predict for all rcas so we can compare salmon vs potential salmon habitat in the future.
 
 Filter salmon rcas only. This is the dataframe that we will predict on. Look at distribution of covariates that will predict over compared to rcas used in model parameterization.
 
@@ -62,7 +65,7 @@ hist(salmon_rcas$cont_area)
 
 ## Add Daymet data to new_data data frame
 
-Read in daymet data. Get 3-day air temperature and 5-day precip. 
+Read in daymet data. Get 3-day air temperature and 5-day precip. No longer filtering by rcas for salmon, these are now all rcas.
 
 ```{r}
 fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_DAYMET.gdb"
@@ -78,8 +81,7 @@ dm3day <- dm3day %>%
 
 new_data_cl <- dm3day %>%
   filter(month(date_day3) %in% 6:9) %>% 
-  select(-date) %>% 
-  right_join(salmon_rcas %>% distinct(rca_id))
+  select(-date) 
 
 summary(new_data_cl)
 
@@ -104,7 +106,7 @@ new_data_cl <- new_data_cl %>%
 ```
 
 
-Merge climate and spatial data frames. Join on the climate data so that spatial covariates are repeated across all dates. Also the climate data frame has been filtered to only include the salmon rcas.
+Merge climate and spatial data frames. Join on the climate data so that spatial covariates are repeated across all dates.
 
 ```{r}
 new_data <- left_join(new_data_cl %>% rename(date = date_day3), new_data_sp)
