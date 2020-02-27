@@ -604,8 +604,10 @@ Backwards selection from a global model per Siegal and Volk paper. Spring model.
 
 ```{r}
 
-spring.gl <- lm(meanT ~ tair3 + day + prcp5 + sweA1 + cont_area + reach_slope + rca_elev_mn + Wetland + sweA1*day + 
-                  rca_elev_mn*day + sweA1*Wetland + Wetland*day, data = spring_meanT)
+spring.gl <- lm(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland + 
+                  sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day, 
+                data = spring_meanT)
 
 summary(spring.gl)
 
@@ -613,8 +615,10 @@ summary(spring.gl)
 Drop day by swe interaction.
 
 ```{r}
-spring.gl <- lm(meanT ~ tair3 + day + prcp5 + sweA1 + cont_area + reach_slope + rca_elev_mn + Wetland +  
-                  rca_elev_mn*day + sweA1*Wetland + Wetland*day, data = spring_meanT)
+spring.gl <- lm(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland +  
+                  rca_elev_mn*day + sweA1*Wetland + Wetland*day, 
+                data = spring_meanT)
 
 summary(spring.gl)
 
@@ -623,7 +627,8 @@ summary(spring.gl)
 Drop wetland by day interaction.
 
 ```{r}
-spring.gl <- lm(meanT ~ tair3 + day + prcp5 + sweA1 + cont_area + reach_slope + rca_elev_mn + Wetland +  
+spring.gl <- lm(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland +  
                   rca_elev_mn*day + sweA1*Wetland, data = spring_meanT)
 
 summary(spring.gl)
@@ -633,7 +638,8 @@ summary(spring.gl)
 Working with all data now (Stariski and APU1) - drop prcp now because no longer significant.
 
 ```{r}
-spring.gl <- lm(meanT ~ tair3 + day + sweA1 + cont_area + reach_slope + rca_elev_mn + Wetland +  
+spring.gl <- lm(meanT ~ tair3 + day + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland +  
                   rca_elev_mn*day + sweA1*Wetland, data = spring_meanT)
 
 summary(spring.gl)
@@ -700,8 +706,9 @@ Start with final model from stepwise backward selection that includes significan
 
 ```{r}
 
-model.form1 <- formula(meanT ~ tair3 + day + sweA1 + cont_area + reach_slope + rca_elev_mn + Wetland +  
-                  rca_elev_mn*day + sweA1*Wetland)
+model.form1 <- formula(meanT ~ tair3 + day + sweA1 + 
+                         cont_area + reach_slope + rca_elev_mn + Wetland +
+                         rca_elev_mn*day + sweA1*Wetland)
 
 modelComp <- modelMetrics(model.form1, spring_meanT)
 
@@ -716,57 +723,51 @@ Try removing the swe by wetland interaction as that is the least significant. On
 
 ```{r}
 
-model.form2 <- formula(meanT ~ tair3 + day + sweA1 + cont_area + reach_slope + rca_elev_mn + 
-                  rca_elev_mn*day)
+model.form2 <- formula(meanT ~ tair3 + day + sweA1 + 
+                         cont_area + reach_slope + rca_elev_mn + 
+                         rca_elev_mn*day)
 
 modelComp <- bind_rows(modelComp, modelMetrics(model.form2, spring_meanT))
 
 fit <- lm(model.form2, data = spring_meanT)
 summary(fit)
-visreg(fit, "reach_slope")
+visreg(fit, "rca_elev_mn", by = "day")
 
 ```
 
-Try removing last interaction. rca elevation by day
+Try removing last interaction - rca elevation by day. This one has a strange effect with higher elevation sites warmer in early June that doesn't match our hypothesis. Once the interaction is removed, rca elevation is no longer significant so remove that as well.
 
 ```{r}
-model.form3 <- formula(meanT ~ tair3 + day + sweA1 + cont_area + reach_slope + rca_elev_mn)
+model.form3 <- formula(meanT ~ tair3 + day + sweA1 + 
+                         cont_area + reach_slope)
 
 modelComp <- bind_rows(modelComp, modelMetrics(model.form3, spring_meanT))
 
 fit <- lm(model.form3, data = spring_meanT)
 summary(fit)
-visreg(fit, "rca_elev_mn")
+
 
 ```
 
-Try removing rca elevation, no longer significant.
+
+Try removing swe, least significant of remaining effects.
 
 ```{r}
-model.form4 <- formula(meanT ~ tair3 + day + sweA1 + cont_area + reach_slope)
+model.form4 <- formula(meanT ~ tair3 + day + 
+                         cont_area + reach_slope)
 
 modelComp <- bind_rows(modelComp, modelMetrics(model.form4, spring_meanT))
 
-fit <- lm(model.form4, data = spring_meanT)
-summary(fit)
-
-```
-
-Try removing swe
-
-```{r}
-model.form5 <- formula(meanT ~ tair3 + day + cont_area + reach_slope)
-
-modelComp <- bind_rows(modelComp, modelMetrics(model.form5, spring_meanT))
-
 springModelComp <- modelComp
+
+write.csv(springModelComp, file = "output/Spring model comparison.csv")
 
 ```
 
 Look at which sites are not predicted well with final spring model. I don't see a good reason to drop all of Stariski or the apu1 site.
 
 ```{r}
-model.form <- model.form4
+model.form <- model.form3
 model.data <- spring_meanT
 
 #loop for spatial cross-validation
@@ -802,7 +803,7 @@ spring_meanT %>%
 Save final model.
 
 ```{r}
-spring.lm <- lm(model.form4, data = spring_meanT)
+spring.lm <- lm(model.form3, data = spring_meanT)
 
 save(spring.lm, file = "output/spring.lm.Rdata")
 ```
@@ -818,17 +819,20 @@ Backwards selection from a global model per Siegal and Volk paper.
 
 ```{r}
 
-fall.gl <- lm(meanT ~ tair3 + day + prcp5 + sweA1 + cont_area + reach_slope + rca_elev_mn + Wetland + sweA1*day + 
-                  rca_elev_mn*day + sweA1*Wetland + Wetland*day, data = fall_meanT)
+fall.gl <- lm(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                cont_area + reach_slope + rca_elev_mn + Wetland + 
+                sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day, 
+              data = fall_meanT)
 
 summary(fall.gl)
 
 ```
-Drop day by wetland interaction.
+Drop day by wetland interaction. Wetland is now highly significant.
 
 ```{r}
-fall.gl <- lm(meanT ~ tair3 + day + prcp5 + sweA1 + cont_area + reach_slope + rca_elev_mn + Wetland + sweA1*day + 
-                  rca_elev_mn*day + sweA1*Wetland, data = fall_meanT)
+fall.gl <- lm(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                cont_area + reach_slope + rca_elev_mn + Wetland + 
+                sweA1*day + rca_elev_mn*day + sweA1*Wetland, data = fall_meanT)
 
 summary(fall.gl)
 
@@ -856,7 +860,8 @@ Start with final model from stepwise backward selection that includes significan
 
 ```{r}
 
-model.form1 <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + cont_area + reach_slope + rca_elev_mn + Wetland + 
+model.form1 <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                         cont_area + reach_slope + rca_elev_mn + Wetland + 
                          sweA1*day + rca_elev_mn*day + sweA1*Wetland)
 
 modelComp <- modelMetrics(model.form1, fall_meanT)
@@ -869,7 +874,8 @@ Try removing the swe by wetland interaction as that is the least significant.
 
 ```{r}
 
-model.form2 <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + cont_area + reach_slope + rca_elev_mn + Wetland + 
+model.form2 <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                         cont_area + reach_slope + rca_elev_mn + Wetland + 
                          sweA1*day + rca_elev_mn*day)
 
 modelComp <- bind_rows(modelComp, modelMetrics(model.form2, fall_meanT))
@@ -882,7 +888,8 @@ Try removing wetland next.
 
 ```{r}
 
-model.form3 <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + cont_area + reach_slope + rca_elev_mn +  
+model.form3 <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                         cont_area + reach_slope + rca_elev_mn +  
                          sweA1*day + rca_elev_mn*day)
 
 modelComp <- bind_rows(modelComp, modelMetrics(model.form3, fall_meanT))
@@ -895,7 +902,8 @@ Try removing each of the interactions - swe by day first.
 
 ```{r}
 
-model.form4 <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + cont_area + reach_slope + rca_elev_mn +  
+model.form4 <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                         cont_area + reach_slope + rca_elev_mn +  
                          rca_elev_mn*day)
 
 modelComp <- bind_rows(modelComp, modelMetrics(model.form4, fall_meanT))
@@ -908,13 +916,24 @@ Remove day x elevation interaction.
 
 ```{r}
 
-model.form5 <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + cont_area + reach_slope + rca_elev_mn)
+model.form5 <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                         cont_area + reach_slope + rca_elev_mn)
 
 modelComp <- bind_rows(modelComp, modelMetrics(model.form5, fall_meanT))
 
 summary(lm(model.form5, data = fall_meanT))
 visreg(lm(model.form5, data = fall_meanT), "prcp5")
 ```
+
+Save model comparison table.
+
+```{r}
+
+fallModelComp <- modelComp
+
+write.csv(fallModelComp, file = "output/fallModelComp.csv")
+```
+
 
 
 Save final model.
