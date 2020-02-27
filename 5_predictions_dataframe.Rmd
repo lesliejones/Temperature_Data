@@ -62,28 +62,54 @@ hist(salmon_rcas$cont_area)
 
 ## Add Daymet data to new_data data frame
 
-Read in daymet data. For now, subset to the most recent decade and only for air temperature. (Add in prcp and swe later on).
+Read in daymet data. Get 3-day air temperature and 5-day precip. 
 
 ```{r}
-#fgdb <- "Spatial_data/Anchor/anchor_DAYMET.gdb"
-#subset(ogrDrivers(), grepl("GDB", name))
-#fc_list <- ogrListLayers(fgdb)
-#print(fc_list)
-#daymet <- sf::st_read(dsn = fgdb, layer = "anchor_daymet")
+fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_DAYMET.gdb"
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+dm3day <- sf::st_read(dsn = fgdb, layer = "tair3_anchor_all")
 
-#commented above out because I think your code below is referencing daymet dataframe from 1_Create model data frame.Rmd not the feature class in the geodatabase 
-new_data_cl <- daymet %>%
+dm3day <- dm3day %>% 
+  mutate(date = as.Date(date)) %>% 
+  select(-Field1) %>% 
+  mutate(date_day3 = date + 1)
+
+new_data_cl <- dm3day %>%
   filter(month(date_day3) %in% 6:9) %>% 
   select(-date) %>% 
   right_join(salmon_rcas %>% distinct(rca_id))
+
 summary(new_data_cl)
+
+new_data_cl %>% filter(tair3 < 0)
 ```
+
+Daymet precipitation.
+
+```{r}
+
+prcp5day <- sf::st_read(dsn = fgdb, layer = "prcp5day")
+prcp5day <- prcp5day %>% 
+  mutate(date = as.Date(date)) %>% 
+  select(-Field1) %>% 
+  mutate(date_day5 = date + 4)
+
+prcp5day <- prcp5day %>% select(-date)
+
+new_data_cl <- new_data_cl %>% 
+  left_join(prcp5day, by = c("rca_id" = "rca_id", "date_day3" = "date_day5"))
+
+```
+
 
 Merge climate and spatial data frames. Join on the climate data so that spatial covariates are repeated across all dates. Also the climate data frame has been filtered to only include the salmon rcas.
 
 ```{r}
 new_data <- left_join(new_data_cl %>% rename(date = date_day3), new_data_sp)
 ```
+
 Add julian date so that the spring model and fall models are predicting only within the range of dates that were used to build the models.
 
 ```{r}
@@ -92,6 +118,19 @@ new_data <- new_data %>%
          year = year(date))
 ```
 
+
+Add in April 1 swe.
+
+```{r}
+sweA1 <- read_csv("Data/sweA1_anchor.csv")
+
+sweA1 <- sweA1 %>% 
+  mutate(year = year(date)) %>% 
+  select(-X1, -date)
+
+new_data <- new_data %>% 
+  left_join(sweA1)
+```
 
 
 # Predictions over new data frame
