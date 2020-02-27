@@ -1,0 +1,112 @@
+# MODIS Land Surface Temperature (LST) Imputation  
+*Author*: Timm Nawrocki, Alaska Center for Conservation Science  
+*Created on*: 2019-05-19  
+*Description*: Imagery, image processing, and imputation of MODIS Land Surface Temperature (LST) missing values.  
+
+## Getting Started
+These instructions will enable reproduction of results for MODIS LST imputation. Scripts have multiple dependencies: Google Earth Engine in Javascript, download script in Anaconda Python 2, ArcGIS Pro Python 3, Anaconda Python 3 on Google Cloud Compute Engine, and R scripts executable in R, RStudio, or RStudio Server. Scripts have been designed to be run with minimal manual processing. The purpose of these scripts is to predict missing values in 20 years of MODIS LST data for future use in stream temperature modeling.  
+
+### Prerequisites
+1. ArcGIS Pro 2.3.2+  
+  a. Python 3.6.6+  
+  c. os  
+  d. numpy 1.15.1+  
+  e. scipy 1.1.0+  
+2. Access to Google Earth Engine (or create MODIS 8-Day LST composites by other means)  
+3. Access to Google Cloud Compute (or create virtual machines by other means)  
+4. Ubuntu 18.04 LTS  
+5. Anaconda3 2019.03+  
+  a. Python 3.7.1+  
+  b. os  
+  c. numpy 1.15.4+  
+  d. pandas 0.23.4+  
+  e. matplotlib 3.0.2+  
+  f. seaborn 0.9.0+  
+  g. sklearn 0.20.1+  
+8. R 3.5.3+  
+  a. sp 1.3-1+  
+  b. raster 2.6-7+  
+  c. rgdal 1.3-4+  
+  d. stringr 1.3.1+  
+9. RStudio 1.2.1335+  
+
+### Installing
+1. Install ArcGIS Pro, Anaconda 2, R, and R Studio in a local environment according to the documentation provided by the originators.  
+2. Download or clone this repository to a folder on a drive accessible to your computer. Local drives may perform better than network drives. The structure and names of files and folders within the repository should not be altered.  
+3. Configure access to Google Earth Engine and Google Cloud Compute Engine.  
+4. Set up virtual machines in Google Cloud Compute Engine according to instructions provided in the "cloudCompute" folder of this repository, including installation of Anaconda 3.  
+
+## Usage
+
+### Earth Engine: MODIS 8-Day Land Surface Temperature
+The Earth Engine scripts export the MODIS 8-Day LST collection from 2000 to 2018 as individual raster per 8 day period. All months of available data are included. The data must be subsetted manually or by additional script not included in this repository if a narrower range of dates is desired. For this analyses, we selected mid-April through end of September. The study area was manually defined by drawing a polygon in ArcGIS Pro and exporting the vertices to the script.
+* In the [Google Earth Engine code editor](https://code.earthengine.google.com/), paste the MODIS_Eight_Day earth engine script into the javascript window. Modify the year and export files. You can optionally modify and save the script in a git repository within Google Earth Engine.
+* Run the script. The results can be inspected in the map window, in the inspector, and in the console.
+* Once the imagery has been prepared, each image must be exported to a Google Drive by clicking the "run" button. The export requires a large amount of available storage in the Google Drive and can take up to several hours to process. Google drive space may incur a charge.
+* Download the imagery from the Google Drive to a local directory using the download script in Anaconda 2.
+
+### Anaconda Python 2: Download MODIS 8-Day Land Surface Temperature
+Follow the instructions for the [Google Drive API](https://developers.google.com/drive/api/v3/quickstart/python) to generate and store a client id, client secret, and credentials.json file. Update the client id, client secret, credentials file, google folder, and output directory in the script. Then run the download script in Anaconda 2. You will be required to log in to your google account to access the drive folder to which you exported the MODIS data.
+
+### ArcGIS Pro Python 3: Create Area of Interest and Format Elevation
+The area of interest (AOI) provides the extent, cell size, grid, and projection for the analyses. We developed the AOI by projecting a representative MODIS LST dataset to 1000x1000 m grid in Alaska Albers Equal Area Conic (NAD 1983 Alaska Albers) projection. The raster was extracted to the 1:63,360 outline of Alaska (excluding small islands) and the manually defined study area and then converted to a polygon without simplification. This script also resamples the 60 m DEM into a 1000 m DEM from which elevation data can be added to the point grid.
+* *Study Area*: Manually delineated study area that defines the region of needed MODIS LST data
+* *1:63,360 Alaska Boundary Excluding Small Islands*: provides the terrestrial area of Alaska. This boundary needs to be manually modified to include portions of Yukon.
+* *Example MODIS LST Raster*: An arbitrary, representative raster of MODIS LST data
+* *USGS 3DEP 60 m DEM*: a seamless IFSAR DEM composite projected into Alaska Albers Equal Area Conic.
+
+### ArcGIS Pro Python 3: Prepare LST Points
+The Prepare LST Points script converts the MODIS LST rasters to regular point grids with X coordinate, Y coordinate, year, and ordinal day. Point grids are output as individual shapefiles.
+* *Area of Interest*: A raster that provides the extent, cell size, grid, and projection for the analyses.
+* *MODIS LST Raster Directory*: A directory containing all MODIS LST rasters with missing data that must be imputed.
+
+### RStudio: Extract Features to Point Grids
+The Extract Features to Point Grids extracts elevation to point grids and exports as csv files with grid value (LST), X coordinate, Y coordinate, year, ordinal day, and elevation.
+* *USGS 3DEP 1000 m DEM*: A seamless composite IFSAR DEM projected into Alaska Albers Equal Area Conic. The 1000 m resolution is matched to the grid and cell size of the analyses.
+* *MODIS LST Point Grid Directory*: A directory containing all MODIS LST point grids with missing data that must be imputed.
+
+### Anaconda 3: Train and Test Land Surface Temperature
+The Train and Test Land Surface Temperature script should be run on a virtual machine (vm) with 64 vCPUs and 416 GB of CPU memory. To set up a vm in Google Cloud Compute Engine, see these [instructions](https://github.com/accs-uaa/stream-temperature-southcentral/tree/master/cloudCompute). This script trains regressors in 10 cross validation iterations with 50% of data withheld at random per iteration as the independent test partition. All performance metrics are calculated from the predictive performance on the test partitions. A final regressor is trained on all of the available data to be used in the prediction script. A performance report with variable importance bar chart and feature correlation chart is produced in this script.
+* *MODIS LST CSV Directory*: A directory containing all MODIS LST csv files with missing data that must be imputed.
+
+### Anaconda 3: Impute Land Surface Temperature
+The Impute Land Surface Temperature script should be run on a vm with 64 vCPUs and 240 GB of CPU memory. This script predicts the LST values for all rows and then creates a composite value based on measured data where available and predicted data where measured data is not available. The script can be parallelized by running different subsets of the MODIS LST csv stack on different vms.
+* *regressor.joblib*: A regressor saved as a joblib file. This file is produced in the train and test script.
+* *MODIS LST CSV Directory*: A directory containing all MODIS LST csv files with missing data that must be imputed.
+
+### RStudio: Convert Predictions to Rasters
+The Convert Predictions to Rasters script converts the imputed csv files into raster files that match the grid and cell size of the Area of Interest.
+* *MODIS LST Predicted Directory*: A directory containing all imputed MODIS LST csv files that must be converted to raster.
+
+## Credits
+
+### Authors
+* **Timm Nawrocki** - *Alaska Center for Conservation Science, University of Alaska Anchorage*
+
+### Usage Requirements
+Usage of the tools included in this toolbox should cited as follows:
+
+Nawrocki, T.W. 2019. Stream Temperature Southcentral. Git Repository. Available: https://github.com/accs-uaa/stream-temperature-southcentral
+
+#### Google Earth Engine
+1. Gorelick, N. M. Hancher, M. Dixon, S. Ilyushchenko, D. Thau, and R. Moore. Google Earth Engine: Planetary-scale geospatial analysis for everyone. Remote Sensing of Environment. 202: 18-27.
+
+#### R library: sp
+1. Pebesma, E.J., and R.S. Bivand. 2005. Classes and methods for spatial data in R. R News. 5: https://cran.r-project.org/doc/Rnews/
+2. Bivand, R.S., E.J. Pebesma, and V. Gomez-Rubio. 2013. Applied spatial data analysis with R, second edition. Springer. New York, New York. 405 p.
+
+#### R library: raster
+1. Hijmans, R.J. 2017. Raster: Geographic Data Analysis and Modeling. R package version 2.6-7. https://CRAN.R-project.org/package=raster
+
+#### R library: rgdal
+1. Bivand, R.S., T. Keitt, and B. Rowlingson. 2018. Rgdal: Bindings for the ‘Geospatial’ Data Abstraction Library. R package version 1.3-4. https://CRAN.R-project.org/package=rgdal
+
+#### Geospatial Data Abstraction Library
+1. GDAL/OGR contributors. 2018. GDAL/OGR Geospatial Data Abstraction software Library. Open Source Geospatial Foundation. http://gdal.org
+
+#### Python Package: sklearn
+1. Pedregosa, F., G. Varoquaux, A. Gramfort, V. Michel, B. Thirion, O. Grisel, M. Blondel, P. Prettenhofer, R. Weiss, V. Duborg, J. Vanderplas, A. Passos, D. Cournapeau, M. Brucher, M. Perrot, and E. Duchesnay. 2011. Scikit-learn: machine learning in python. Journal of Machine Learning Research. 12: 2825-2830.
+2. Buitinck, L., G. Louppe, M. Blondel, F. Pedregosa, A. Mueller, O. Grisel, V. Niculae, P. Prettenhofer, A. Gramfort, J. Grobler, R. Layton, J. Vanderplas, A. Joly, B. Holt, and G. Varaoquaux. 2013. API Design for machine learning software: experiences from the scikit-learn project. European Conference on Machine Learning and Principles and Practices of Knowledge Discovery in Databases: Languages for Data Mining and Machine Learning. 108-122 p. Available: https://arxiv.org/abs/1309.0238
+
+### License
+This repository and its contents are licensed under Creative Commons Attribution-Share Alike.

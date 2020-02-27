@@ -1,0 +1,115 @@
+---
+title: "Project Notes and Questions"
+author: "Leslie Jones"
+date: "January 23, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Objectives
+1) Use empirical temperature data to predict stream temperatures for Anchor watershed - parameterize model with climate and geomorphic covariates
+2) Compare model fit with LST vs air temperature. 
+3) Interpolate temperature predictions across riverscapes 
+4) Merge predictions to species distributions and summarize thermal niche over time (thermal regimes) 
+5) Summarize historic temperture regimes, possible trends, anomolies? - use metrics to understand change in temperatures 
+6) Use monthly delta changes in air temperature to predict future conditions/changes
+
+*for manuscript - Compare covariate response across different hydrologic system types (Anchor, Kenai, and Deshka)
+
+# Study Area
+Anchor, Kenai, and Deshka
+All watersheds are uniquely different with diverse hydrologic drivers. 
+
+# Geomporphic Indicators
+
+Scale of model and predictions:
+Introduce RCAs (Reach Contributing Areas) - value of hydrologic connectivity
+we used the Spatial Tools for the Analysis of River Systems (STARS) toolbox version 2.0.4 (Peterson 2015) for ArcGIS ver 10.x (ESRI 2013) to identify the land surface area draining into each reach (reach contributing area; RCA). The RCAs averaged x.x km2 ± x.x SD for the Anchor River basin. Join site-specific temperature records to corresponding RCA for model parameterization
+
+rca_elev_mn:
+Elevation (Elev; m) was determined for each RCA by taking the average elevation for each RCA using 5 m ifsar DEM.
+
+ca_elev_mn:
+Mean elevation of upstream contributing area draining to rca pour point.
+
+Reach_slope (check methods with Dustin):
+RCA specific reaches generated from STARS package were used in addition to 5m ifsar to calculate reach slopes.
+Used 3D analyst - Add surface information to get minimum and maximum elevation, and reach length for each reach. Percent and degree slope were calculated from those metrics (max-min)/length*100. Converted percent to degrees by (Atan (slope_P/100))*(180/3.14159). 
+
+Upstream Contributing Area:
+Creating a synthetic network (reaches and rcas) produces gridded surface of flow accumulation values (number of upstream cells draining to rca pour point). Flow accumulation values were extracted for the pour point of each RCA. Upstream contributing area was then calculated by multiplying the flow accumulation for each RCA by 25 and then converted from square meters to square kilometers by multiplying by 1000000.
+
+
+Land Cover covariates:
+NLCD (year) was used to calculate percent cover forest, wetland, and shrub for each RCA. RCA reaches were buffered by 30 meters and then percent cover for each classification was calcuated representing riparian vegetation composition. Forest classification included deciduous, evergreen, and mixed, while and shrub included dwarf and scrub.
+
+
+Percent cover Glacier:
+GLIMS (year) was used to calculate upstream percent cover of glacier for each RCA. This was calculated by....
+
+#CLIMATE DATA
+## Daymet Climate Drivers
+The Daymet calendar is based on a standard calendar year. All Daymet years have 1 – 365 days, including leap years. For leap years, the Daymet database includes leap day. Values for December 31 are discarded from leap years to maintain a 365-day year. date represents middle point of 8-day average (4 before and 3 after)
+
+Daymet air temperature, precipitaiton and snow-water equivalent were summarized for each RCA. We calculated 8-day and 3-day summaries (rolling means) of mean daily air temperature. Daily precipitation totals were summed over 3-day periods and then joined to the stream temperature data indicating total precipitation observed for the 3 days prior to recorded temperature.
+May 1st? snow-water equivalent was averaged over each RCA. 
+
+
+- Because there is spatial structure in LST model (McNyset), and the spatialy continuous variables are correlated with each other, use a simple linear regression of each candidate predictor variable on LST for the entire basin and all years to show predictor variable correlation, and review residuals before considering predictor inclusion in LST model
+
+- air:LST relationship? use Cross correlation function (Time Series Analysis package in R) to test for any significant time lags in the correlative relationship between LST and water temperature -do the same for air temp in consideration of developing relationship for the future analysis
+~~~~
+## MODIS Land Surface Temperature 
+We considered MODIS 8-day (1 km) vs Landsat 2-week (30 m) in our LST approach. We went with the finer-scale temporal resolution rather than spatial resolution. 8-day composites on drive represent average LST for 8-days after date of file (including date of file). Any missing cells over 8-day period were imputed by....Date of file represents 1st day of 8-day average
+
+The Earth Engine scripts export the MODIS 8-Day LST collection from 2000 to 2018 as individual raster per 8 day period. All months of available data are included. The data must be subsetted manually or by additional script not included in this repository if a narrower range of dates is desired. For this analyses, we selected mid-April through end of September. The study area was manually defined by drawing a polygon in ArcGIS Pro and exporting the vertices to the script. See LST methods.Rmd for more details to be included in report and manuscript...
+
+###  Train and Test Land Surface Temperature
+The Train and Test Land Surface Temperature script trains regressors in 10 cross validation iterations with 50% of data withheld at random per iteration as the independent test partition. All performance metrics are calculated from the predictive performance on the test partitions. A final regressor is trained on all of the available data to be used in the prediction script. A performance report with variable importance bar chart and feature correlation chart is produced in this script.
+
+### Impute Land Surface Temperature
+The Impute Land Surface Temperature script predicts the LST values for all rows and then creates a composite value based on measured data where available and predicted data where measured data is not available. The script can be parallelized by running different subsets of the MODIS LST csv stack on different vms.
+
+### Convert Predictions to Rasters
+The Convert Predictions to Rasters script converts the imputed csv files into raster files that match the grid and cell size of the Area of Interest.
+
+Based on 10 cross validation sets with 50% of data withheld as the test partition per iteration, the model had an R^2 of 0.96 and a RMSE of 91. Our test partitions are so large and variance in the results so small that there is no need for more than 10 cv iterations. 
+
+Final LST rasters were averaged for each RCA and joined to temperature sites using RCA id
+
+All methods are in Github repository: https://github.com/accs-uaa/stream-temperature-southcentral
+and cloned to W:/Github/LST
+
+GIS data are in W:/GIS/LST/MODIS
+~~~~
+
+# Stream Temperature 
+## Model Approach
+
+1) Multicollinearity among covariates?
+2) Stream temp correlations with air and LST
+3) Forward/backward model selection
+4) Model validation using RMSE (leave one out cross validation)
+5) Test for spatial and temporal autocorrelation in residuals.
+
+## Spatial interpolations
+Spatial domain = By RCAs
+Temporal domain = daily (1980-2018)
+
+## Link to species distributions and summarize thermal niches for each watershed
+- Use AWC species distributions to identify RCAs with Chinook, Sockeye, Chum, Coho, and Pink presence, rearing, and spawning habitat classifications. Summarize daily predictions by day, year, and decade to investigate thermal regimes for salmon in teh Anchor watershed.
+
+- Look at temporal trends in temperature - inter-annual variability (space and time)
+- calculate metrics that capture change over time and specific to salmon life-histories.
+
+##Future predictions
+All 2km resolution data is downscaled using PRISM 1961-1990 baseline climatology.
+Historical data is extracted from both downscaled CRU data (1961-
+1990, CRU-based climatology) and also original PRISM (1961-1990) climatologies. Projected data are
+based upon our 5 model average downscaled AR5 temperature (http://ckandev.
+snap.uaf.edu/dataset/projected-monthly-and-derived-temperature-products-2km-cmip5-ar5) and
+precipitation (http://ckan-dev.snap.uaf.edu/dataset/projected-monthly-and-derived-precipitation-products-
+2km-cmip5-ar5) products, using both PRISM and CRU data as baseline climatolgies.

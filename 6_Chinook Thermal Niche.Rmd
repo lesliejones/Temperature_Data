@@ -32,8 +32,7 @@ Spawning habitat will be summarized for July, August, and September, whereas rea
 load(file = "output/preds.Rdata")
 
 #add month and decadal variable and filter on chinook
-K_p <- preds %>% mutate(month=month(date)) %>% mutate(decade=case_when(year< 1990 ~ 1980, year >= 1990 & year < 2000 ~ 1990,
-                year >=2000 & year < 2010 ~ 2000, year>2009 ~ 2010)) %>% filter(K_p == 1)
+K_p <- preds %>% mutate(month=month(date)) %>% mutate(decade=case_when(year< 1990 ~ 1980, year >= 1990 & year < 2000 ~ 1990, year >=2000 & year < 2010 ~ 2000, year>2009 ~ 2010)) %>% filter(K_p == 1)
 
 save(K_p, file = "output/K_p.Rdata")
 

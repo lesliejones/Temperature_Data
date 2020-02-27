@@ -35,7 +35,7 @@ library(arcgisbinding)
 fgdb <- "Spatial_data/Anchor/Anchor.gdb"
 
 # Read the rca and reaches feature classes
-rcas <- sf::st_read(dsn = fgdb, layer = "anchor_rcas_attributed_06022020") %>% select(c(rca_id, Shape, Shape_Area))
+rcas <- sf::st_read(dsn = fgdb, layer = "anchor_rcas_attributed_06022020") %>% select(c(rca_id, Shape, Shape_Area,rca_elev_mn))
 
 rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_06022020") %>% mutate(rca_id=reach_id) %>% select(c(rca_id, Shape, Shape_Length))
 
@@ -52,35 +52,39 @@ K_p2 <- K_p %>% select(rca_id, K_p, K_s, K_r, preds, year, month, day, date, dec
 
 K_p_rca <- sp::merge (rcas, K_p2, by="rca_id") 
 
+#remove large objects from global environment
 remove(K_p2, K_p)
 ```
 
 
-#Chinook predictions
-#static maps by decade - warm and cold year - interannual variation (rcas)
+#Create dataframes for maps and delete those that are really large objects
 
 ```{r}
+#filter for one day to test map template
+K_try <- K_p_rca %>% filter(day==202 & year==2004)
+
 #create datasets needed for plot -  interannual variability of rcas
 annual <- K_p_rca %>% group_by(rca_id, year) %>% summarize(yr_mn=mean(preds), yr_sd=sd(preds))
 
 #faceted map for cold year and warm year - annual average temperatures
-warm_cold <- K_p_rcas %>% filter(year==2004 | year==1992) %>% group_by(rca_id, year) %>% 
+warm_cold <- K_p_rca %>% filter(year==2004 | year==1992) %>% group_by(rca_id, year) %>% 
   summarize(yr_mn=mean(preds), yr_sd=sd(preds))
 
 #average temperatures by decade and mapped
-decade<- K_rcas %>%  group_by(rca_id, decade) %>% summarize(dec_mn=mean(preds), dec_sd=sd(preds))
+decade<- K_p_rca %>%  group_by(rca_id, decade) %>% summarize(dec_mn=mean(preds), dec_sd=sd(preds))
 
 #average temperatures by decade and month
-mth_decade<- K_rcas %>%  group_by(rca_id, month, decade) %>% 
+mth_decade<- K_p_rca %>%  group_by(rca_id, month, decade) %>% 
   summarize(dec_mn=mean(preds), dec_sd=sd(preds))
 
 #animated plot1
-K_aug <- rca_preds %>% filter(month==8) %>% group_by (rca_id, year, month) %>% summarise(aug_mn = mean(preds))
+K_aug <- K_p_rca %>% filter(month==8) %>% group_by (rca_id, year, month) %>% summarise(aug_mn = mean(preds))
 
 #animation for whole year
-K_2004 <- K_rcas  %>% filter(year==2004) %>% group_by (rca_id, date) %>% summarise(day_mn = mean(preds)) 
+K_2004 <- K_p_rca  %>% filter(year==2004) %>% group_by (rca_id, date) %>% summarise(day_mn = mean(preds)) 
 
-remove(K_p_rcas)
+#remove large objects from global environment
+remove(K_p_rca)
 
 
 ```
@@ -91,9 +95,9 @@ remove(K_p_rcas)
 ggplot(data=rcas) + geom_sf(aes(fill=rca_elev_mn)) + scale_colour_viridis_c(option = "C")
 
 #filter predictions for one day and try creating base map of predictions with color gradient and change breaks in color ramp
-K_try <- K_rcas %>% filter(day==202 & year==2004)
+
 ggplot(data=K_try) + geom_sf(aes(fill=preds)) + 
-    scale_fill_gradient(low = "blue", high = "red", breaks=c(8,9,10,11,12,13,14,15))
+    scale_fill_gradient(low = "blue", high = "red", breaks=c(4,5,6,7,8,9,10,11,12,13,14,15))
 
 #Map of inter-annual variability of predictions
 ggplot(data=annual) + geom_sf(aes(fill=yr_sd)) +
@@ -102,14 +106,12 @@ ggplot(data=annual) + geom_sf(aes(fill=yr_sd)) +
 
 ggsave("Anchor_chinook_plots/Interannual_variation_mean_annual_temperatures.jpeg", plot=last_plot())
 
-
 #warm and cold year compared
 ggplot(data=warm_cold) + geom_sf(aes(fill=yr_mn)) + 
     scale_fill_gradient(name = "Temperature (Celsius)", low = "blue", high = "red") + facet_wrap(~year) +
      labs(title="Mean Annual Temperatures for warmest and coldest years", x="Longitude", y="Latitude")
 
 ggsave("Anchor_chinook_plots/Mean_Annual_Temperature_warm_coldyears.jpeg", plot=last_plot())
-
 
 #Mean decadal temperatures
 ggplot(data=decade) + geom_sf(aes(fill=dec_mn)) + 
