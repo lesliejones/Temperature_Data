@@ -204,6 +204,33 @@ CO_r <- CO_p %>% filter (CO_r==1) %>% filter(month>=6 & month<=8)
 save(CO_r, file = "output/CO_r.Rdata")
 ```
 
+#average annual temperatures for warm/cold high/low snowpack years and export shapefiles for maps
+```{r}
+#faceted map for cold year and warm year - annual average temperatures
+scenario <- preds %>% filter(year==2016 | year==1990 | year==2012 | year==1982) %>% group_by(rca_id, year) %>% 
+  summarize(yr_mn=mean(preds), yr_sd=sd(preds))
+
+year_2016 <- scenario %>% filter(year==2016)
+year_1990 <- scenario %>% filter(year==1990)
+year_2012 <- scenario %>% filter(year==2012)
+year_1982 <- scenario %>% filter(year==1982)
+
+rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_06022020") %>% mutate(rca_id=reach_id) %>% select(c(rca_id, Shape, Shape_Length))
+
+reach_2016 <- sp::merge (rca_reach, year_2016, by="rca_id") 
+st_write(reach_2016, "Spatial_data/Anchor/shapefile_preds/reach_2016.shp", driver="ESRI Shapefile")
+
+reach_1990 <- sp::merge (rca_reach, year_1990, by="rca_id") 
+st_write(reach_1990, "Spatial_data/Anchor/shapefile_preds/reach_1990.shp", driver="ESRI Shapefile")
+
+reach_2012 <- sp::merge (rca_reach, year_2012, by="rca_id") 
+st_write(reach_2012, "Spatial_data/Anchor/shapefile_preds/reach_2012.shp", driver="ESRI Shapefile")
+
+reach_1982 <- sp::merge (rca_reach, year_1982, by="rca_id") 
+st_write(reach_1982, "Spatial_data/Anchor/shapefile_preds/reach_1982.shp", driver="ESRI Shapefile")
+
+
+```
 
 
 
