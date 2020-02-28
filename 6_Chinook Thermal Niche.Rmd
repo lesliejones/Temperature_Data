@@ -27,20 +27,11 @@ library(kableExtra)
 # Thermal niche summaries for Chinook Salmon
 Spawning habitat will be summarized for July, August, and September, whereas rearing habitat is summarized for June, July, and August.
 
-```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE}
-#Load predictions data frame.
-load(file = "output/preds.Rdata")
-
-#add month and decadal variable and filter on chinook
-K_p <- preds %>% mutate(month=month(date)) %>% mutate(decade=case_when(year< 1990 ~ 1980, year >= 1990 & year < 2000 ~ 1990, year >=2000 & year < 2010 ~ 2000, year>2009 ~ 2010)) %>% filter(K_p == 1)
-
-save(K_p, file = "output/K_p.Rdata")
-
-K_s <- K_p %>% filter (K_s==1) %>% filter(month>=7)
-save(K_s, file = "output/K_s.Rdata")
-
-K_r <- K_p %>% filter (K_r==1) %>% filter(month>=6 & month<=8)
-save(K_r, file = "output/K_r.Rdata")
+```{r}
+#load chinook rearing and spawning datasets
+load(file = "output/K_r.Rdata")
+load(file = "output/K_s.Rdata")
+load(file = "output/K_p.Rdata")
 ```
 
 
