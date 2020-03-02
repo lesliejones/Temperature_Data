@@ -1,0 +1,63 @@
+---
+title: "9_Temperature metrics"
+author: "Becky"
+date: "2/28/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+
+library(tidyverse); library(zoo); library(lubridate)
+
+load(file = "output/preds.Rdata")
+
+```
+
+
+# Calculate metrics for each rca and year.
+
+```{r}
+
+mets <- preds %>%  
+  filter(rca_id %in% 900:1000) %>% 
+  mutate(MA_mean = rollmean(preds, k = 7, align = "center", fill = NA)) %>% 
+  group_by(rca_id, year) %>% 
+  summarize(MxDAT = max(preds),
+            MxDAT_jd = day[max(preds) == preds],
+            MA7d_DAT = max(MA_mean, na.rm = TRUE),
+            MA7d_DAT = day[max(MA_mean, na.rm = TRUE) == MA_mean],
+            CDD = sum(preds),
+            RNG = max(preds) - min(preds),
+            SIGMA_MN = var(preds),
+            SUM_13_jas = sum(preds[month(date) %in% 7:9] > 13),
+            SIGMA_MN_jas = var(preds[month(date) %in% 7:9]))
+
+preds %>% 
+  filter(rca_id == 1, year == 1985) %>% 
+  mutate(MA_mean = rollmean(preds, k = 7, align = "center", fill = NA)) %>% 
+  ggplot(aes(x = day, y = MA_mean)) + 
+  geom_line()
+
+
+```
+
+Plot a few temperature metrics over time.
+
+```{r}
+
+p1 <- mets %>% 
+  gather(key = "metric", value = "value", -rca_id, -year) %>% 
+  group_by(year, metric) %>% 
+  summarize(mean_value = mean(value)) %>% 
+  ggplot(aes(x = year, y = mean_value)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(~metric, scales = "free_y")
+
+p1
+ggsave(p1, "output/metrics over time.jpg", width = , height = )
+
+```
+
+
