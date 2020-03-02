@@ -156,6 +156,109 @@ sep_10r <-sep_reach %>% filter(decade==2010)
 st_write(sep_10r, "Spatial_data/Anchor/shapefile_preds/sep_10_reach.shp", driver="ESRI Shapefile")
 
 ```
+#average annual temperatures for warm/cold high/low snowpack years and export shapefiles for maps
+```{r}
+#faceted map for cold year and warm year - annual average temperatures
+scenario <- preds %>% filter(year==2016 | year==1990 | year==2012 | year==1982) %>% group_by(rca_id, year) %>% 
+  summarize(yr_mn=mean(preds), yr_sd=sd(preds))
+
+#2016 = warm summer + low snowpack
+#1990 = warm summer + high snow
+#2012 = cold summer + high snow
+#1982 = cold summer + low snow
+year_2016 <- scenario %>% filter(year==2016)
+year_1990 <- scenario %>% filter(year==1990)
+year_2012 <- scenario %>% filter(year==2012)
+year_1982 <- scenario %>% filter(year==1982)
+
+rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_06022020") %>% mutate(rca_id=reach_id) %>% select(c(rca_id, Shape, Shape_Length))
+
+reach_2016 <- sp::merge (rca_reach, year_2016, by="rca_id") 
+st_write(reach_2016, "Spatial_data/Anchor/shapefile_preds/reach_2016.shp", driver="ESRI Shapefile")
+
+reach_1990 <- sp::merge (rca_reach, year_1990, by="rca_id") 
+st_write(reach_1990, "Spatial_data/Anchor/shapefile_preds/reach_1990.shp", driver="ESRI Shapefile")
+
+reach_2012 <- sp::merge (rca_reach, year_2012, by="rca_id") 
+st_write(reach_2012, "Spatial_data/Anchor/shapefile_preds/reach_2012.shp", driver="ESRI Shapefile")
+
+reach_1982 <- sp::merge (rca_reach, year_1982, by="rca_id") 
+st_write(reach_1982, "Spatial_data/Anchor/shapefile_preds/reach_1982.shp", driver="ESRI Shapefile")
+
+
+```
+
+#average annual temperatures for warm/cold high/low snowpack years and export shapefiles for maps
+```{r}
+#faceted map for cold year and warm year - annual average temperatures
+scenario1 <- preds %>% filter(year==2016 | year==1990 | year==2012 | year==1982) %>% group_by(rca_id, month, year) %>% 
+  summarize(yr_mn=mean(preds), yr_sd=sd(preds))
+
+#2016 = warm summer + low snowpack
+#1990 = warm summer + high snow
+#2012 = cold summer + high snow
+#1982 = cold summer + low snow
+jun_2016 <- scenario1 %>% filter(year==2016 & month==6)
+jul_2016 <- scenario1 %>% filter(year==2016 & month==7)
+aug_2016 <- scenario1 %>% filter(year==2016 & month==8)
+sep_2016 <- scenario1 %>% filter(year==2016 & month==9)
+
+jun_1990 <- scenario1 %>% filter(year==1990 & month==6)
+jul_1990 <- scenario1 %>% filter(year==1990 & month==7)
+aug_1990 <- scenario1 %>% filter(year==1990 & month==8)
+sep_1990 <- scenario1 %>% filter(year==1990 & month==9)
+
+jun_2012 <- scenario1 %>% filter(year==2012 & month==6)
+jul_2012 <- scenario1 %>% filter(year==2012 & month==7)
+aug_2012 <- scenario1 %>% filter(year==2012 & month==8)
+sep_2012 <- scenario1 %>% filter(year==2012 & month==9)
+
+jun_1982 <- scenario1 %>% filter(year==1982 & month==6)
+jul_1982 <- scenario1 %>% filter(year==1982 & month==7)
+aug_1982 <- scenario1 %>% filter(year==1982 & month==8)
+sep_1982 <- scenario1 %>% filter(year==1982 & month==9)
+
+rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_06022020") %>% mutate(rca_id=reach_id) %>% select(c(rca_id, Shape, Shape_Length))
+
+jun_2016 <- sp::merge (rca_reach, jun_2016, by="rca_id") 
+st_write(jun_2016, "Spatial_data/Anchor/shapefile_preds/jun_2016.shp", driver="ESRI Shapefile")
+jul_2016 <- sp::merge (rca_reach, jul_2016, by="rca_id") 
+st_write(jul_2016, "Spatial_data/Anchor/shapefile_preds/jul_2016.shp", driver="ESRI Shapefile")
+aug_2016 <- sp::merge (rca_reach, aug_2016, by="rca_id") 
+st_write(aug_2016, "Spatial_data/Anchor/shapefile_preds/aug_2016.shp", driver="ESRI Shapefile")
+sep_2016 <- sp::merge (rca_reach, sep_2016, by="rca_id") 
+st_write(sep_2016, "Spatial_data/Anchor/shapefile_preds/sep_2016.shp", driver="ESRI Shapefile")
+
+jun_2012 <- sp::merge (rca_reach, jun_2012, by="rca_id") 
+st_write(jun_2012, "Spatial_data/Anchor/shapefile_preds/jun_2012.shp", driver="ESRI Shapefile")
+jul_2012 <- sp::merge (rca_reach, jul_2012, by="rca_id") 
+st_write(jul_2012, "Spatial_data/Anchor/shapefile_preds/jul_2012.shp", driver="ESRI Shapefile")
+aug_2012 <- sp::merge (rca_reach, aug_2012, by="rca_id") 
+st_write(aug_2012, "Spatial_data/Anchor/shapefile_preds/aug_2012.shp", driver="ESRI Shapefile")
+sep_2012 <- sp::merge (rca_reach, sep_2012, by="rca_id") 
+st_write(sep_2012, "Spatial_data/Anchor/shapefile_preds/sep_2012.shp", driver="ESRI Shapefile")
+
+jun_1990 <- sp::merge (rca_reach, jun_1990 , by="rca_id") 
+st_write(jun_1990 , "Spatial_data/Anchor/shapefile_preds/jun_1990 .shp", driver="ESRI Shapefile")
+jul_1990  <- sp::merge (rca_reach, jul_1990 , by="rca_id") 
+st_write(jul_1990 , "Spatial_data/Anchor/shapefile_preds/jul_1990 .shp", driver="ESRI Shapefile")
+aug_1990  <- sp::merge (rca_reach, aug_1990 , by="rca_id") 
+st_write(aug_1990 , "Spatial_data/Anchor/shapefile_preds/aug_1990 .shp", driver="ESRI Shapefile")
+sep_1990  <- sp::merge (rca_reach, sep_1990 , by="rca_id") 
+st_write(sep_1990 , "Spatial_data/Anchor/shapefile_preds/sep_1990 .shp", driver="ESRI Shapefile")
+
+jun_1982 <- sp::merge (rca_reach, jun_1982, by="rca_id") 
+st_write(jun_1982, "Spatial_data/Anchor/shapefile_preds/jun_1982.shp", driver="ESRI Shapefile")
+jul_1982 <- sp::merge (rca_reach, jul_1982, by="rca_id") 
+st_write(jul_1982, "Spatial_data/Anchor/shapefile_preds/jul_1982.shp", driver="ESRI Shapefile")
+aug_1982 <- sp::merge (rca_reach, aug_1982, by="rca_id") 
+st_write(aug_1982, "Spatial_data/Anchor/shapefile_preds/aug_1982.shp", driver="ESRI Shapefile")
+sep_1982 <- sp::merge (rca_reach, sep_1982, by="rca_id") 
+st_write(sep_1982, "Spatial_data/Anchor/shapefile_preds/sep_1982.shp", driver="ESRI Shapefile")
+
+
+
+```
 
 #load chinook predictions dataframe and join to spatial data
 ```{r}

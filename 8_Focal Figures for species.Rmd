@@ -26,6 +26,7 @@ library(rgeos)
 library(readr)
 library(tibble)
 library(arcgisbinding)
+library(ggridges)
 ```
 
 ```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE, fig.align="center", fig.width=6, fig.asp=1}
@@ -42,6 +43,18 @@ load(file = "output/CO_s.Rdata")
 load(file = "output/CO_p.Rdata")
 
 
+```
+
+```{r}
+#mean annual temperatures for all chinook habitat - plot trends in temperatures and variation among rcas
+inter_salmon <- preds %>% filter(salmon>0) %>% group_by(year) %>% mutate(yr_mn=mean(preds), yr_sd=sd(preds)) 
+
+ggplot(data=inter_salmon) +
+  geom_line(aes(x = year, y = yr_mn))  + geom_smooth(aes(x = year, y = yr_mn),method = "lm") +
+  labs(x="Year", y="Stream Temperature")+
+  ggtitle("Mean annual stream temperatures for salmon habitat") 
+
+ggsave("salmon_figs/Mean annual stream temperatures for salmon habitat.jpeg", plot=last_plot())
 ```
 
 ```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE, fig.align="center", fig.width=6, fig.asp=1}
@@ -309,5 +322,66 @@ ggplot(data=aug_r2) + geom_bar(aes(x=bin, y=percent, fill=as.factor(decade)), st
 ```{r}
 #clear global environment
 remove(list = ls())
+```
+
+#GGRIDGES - https://cran.r-project.org/web/packages/ggridges/vignettes/introduction.html
+```{r}
+
+decade_2010 <- preds %>% filter(decade==2010)
+
+#simple ridge plot
+ggplot(decade_2010, aes(x=preds, y=year, group=as.integer(year))) + geom_density_ridges()
+
+#color ridges
+ggplot(decade_2010, aes(x=preds, y=year, group=as.integer(year), fill=stat(x)))  +
+   geom_density_ridges_gradient(scale = 4, rel_min_height = 0.01) +
+  scale_fill_viridis_c(name = "Temp. [C]", option = "C") +
+  labs(title = 'Salmon thermal regimes for 2010 decade')
+ 
+#ggridges for scenarios 
+
+scenario_yrs <- preds %>% filter(year==2016 | year==1990 | year==2012 | year==1982)
+
+ggplot(scenario_yrs, aes(x=preds, y=year, group=as.integer(year), fill=stat(x)))  +
+   geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
+  scale_fill_viridis_c(name = "Temp. [C]", option = "C") +
+  labs(title = 'Salmon thermal regimes for climate scenarios')
+
+#ggsave("scenario_maps/GGridge_plot.jpeg", plot=last_plot())
+
+ggplot(preds, aes(x=preds, y=decade, group=as.integer(decade), fill=stat(x)))  +
+   geom_density_ridges_gradient(scale = 1, rel_min_height = 0.01) +
+  scale_fill_viridis_c(name = "Temp. [C]", option = "C") +
+  labs(title = 'Salmon thermal regimes by decade')
+
+p_dec1 <- preds %>% filter(decade==1980 | decade==1990) 
+ggplot(p_dec1, aes(x=preds, y=year, group=as.integer(year), fill=stat(x)))  +
+   geom_density_ridges_gradient(scale = 1, rel_min_height = 0.01) +
+  scale_fill_viridis_c(name = "Temp. [C]", option = "C") + 
+  labs(title = 'Salmon thermal regimes for 1980-2000')
+
+p_dec2 <- preds %>% filter(decade==2000| decade==2010) 
+ggplot(p_dec2, aes(x=preds, y=year, group=as.integer(year), fill=stat(x)))  +
+   geom_density_ridges_gradient(scale = 1, rel_min_height = 0.01) +
+  scale_fill_viridis_c(name = "Temp. [C]", option = "C") + 
+  labs(title = 'Salmon thermal regimes for 2000-2018')
+
+#by species
+
+s1 <- K_s %>% filter(year==2016 | year==1990 | year==2012 | year==1982)
+r1 <- K_r %>% filter(year==2016 | year==1990 | year==2012 | year==1982)
+
+ggplot(s1, aes(x=preds, y=year, group=as.integer(year), fill=stat(x)))  +
+   geom_density_ridges_gradient(scale = 1, rel_min_height = 0.01) +
+  scale_fill_viridis_c(name = "Temp. [C]", option = "C") + 
+  labs(title = 'Thermal regimes for Chinook spawning habitat')
+
+ggplot(r1, aes(x=preds, y=year, group=as.integer(year), fill=stat(x)))  +
+   geom_density_ridges_gradient(scale = 1, rel_min_height = 0.01) +
+  scale_fill_viridis_c(name = "Temp. [C]", option = "C") + 
+  labs(title = 'Thermal regimes for Chinook rearing habitat')
+
+
+
 ```
 

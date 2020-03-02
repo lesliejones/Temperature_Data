@@ -167,7 +167,7 @@ Combine.
 
 ```{r}
 preds <- bind_rows(new_data_spring, new_data_fall)
-preds <- preds %>% mutate(month=month(date)) %>% mutate(decade=case_when(year< 1990 ~ 1980, year >= 1990 & year < 2000 ~ 1990, year >=2000 & year < 2010 ~ 2000, year>2009 ~ 2010))
+preds <- preds %>% mutate(month=month(date)) %>% mutate(decade=case_when(year< 1990 ~ 1980, year >= 1990 & year < 2000 ~ 1990, year >=2000 & year < 2010 ~ 2000, year>2009 ~ 2010)) %>%  mutate(salmon = K_p + CH_p + P_p + CO_p + S_p)
 ```
 
 Save predictions data frame.
@@ -204,33 +204,30 @@ CO_r <- CO_p %>% filter (CO_r==1) %>% filter(month>=6 & month<=8)
 save(CO_r, file = "output/CO_r.Rdata")
 ```
 
-#average annual temperatures for warm/cold high/low snowpack years and export shapefiles for maps
 ```{r}
-#faceted map for cold year and warm year - annual average temperatures
-scenario <- preds %>% filter(year==2016 | year==1990 | year==2012 | year==1982) %>% group_by(rca_id, year) %>% 
-  summarize(yr_mn=mean(preds), yr_sd=sd(preds))
+#create chum dataframes
+CH_p <- preds %>% filter(CH_p == 1)
 
-year_2016 <- scenario %>% filter(year==2016)
-year_1990 <- scenario %>% filter(year==1990)
-year_2012 <- scenario %>% filter(year==2012)
-year_1982 <- scenario %>% filter(year==1982)
+save(CH_p, file = "output/CH_p.Rdata")
 
-rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_06022020") %>% mutate(rca_id=reach_id) %>% select(c(rca_id, Shape, Shape_Length))
+CH_s <- CH_p %>% filter (CH_s==1) %>% filter(month>=7)
+save(CH_s, file = "output/CH_s.Rdata")
 
-reach_2016 <- sp::merge (rca_reach, year_2016, by="rca_id") 
-st_write(reach_2016, "Spatial_data/Anchor/shapefile_preds/reach_2016.shp", driver="ESRI Shapefile")
-
-reach_1990 <- sp::merge (rca_reach, year_1990, by="rca_id") 
-st_write(reach_1990, "Spatial_data/Anchor/shapefile_preds/reach_1990.shp", driver="ESRI Shapefile")
-
-reach_2012 <- sp::merge (rca_reach, year_2012, by="rca_id") 
-st_write(reach_2012, "Spatial_data/Anchor/shapefile_preds/reach_2012.shp", driver="ESRI Shapefile")
-
-reach_1982 <- sp::merge (rca_reach, year_1982, by="rca_id") 
-st_write(reach_1982, "Spatial_data/Anchor/shapefile_preds/reach_1982.shp", driver="ESRI Shapefile")
-
-
+CH_r <- CH_p %>% filter (CH_r==1) %>% filter(month>=6 & month<=8)
+save(CH_r, file = "output/CH_r.Rdata")
 ```
 
+```{r}
+#create pink dataframes
+P_p <- preds %>% filter(P_p == 1)
+
+save(P_p, file = "output/P_p.Rdata")
+
+P_s <- P_p %>% filter (P_s==1) %>% filter(month>=7)
+save(P_s, file = "output/P_s.Rdata")
+
+P_r <- P_p %>% filter (P_r==1) %>% filter(month>=6 & month<=8)
+save(P_r, file = "output/P_r.Rdata")
+```
 
 

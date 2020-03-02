@@ -33,11 +33,11 @@ snap.uaf.edu/dataset/projected-monthly-and-derived-temperature-products-2km-cmip
 precipitation (http://ckan-dev.snap.uaf.edu/dataset/projected-monthly-and-derived-precipitation-products-
 2km-cmip5-ar5) products, using both PRISM and CRU data as baseline climatolgies.
 
+#temperature
 ```{r cars}
 Anchor <- snap %>% filter(community=="Anchor Point" & type=="Temperature") %>% select(community, type, daterange, scenario,resolution, junMean, julMean,  augMean, sepMean) 
 
-#res_10 <- Anchor %>% filter(resolution=="10min") %>% mutate(jun_diff=(junMean- 9.4), jul_diff=(julMean-11.7), #aug_diff=(augMean-11.5), sep_diff=(sepMean-8.3))
-
+#calculate delta change in temperatures
 res_2km <- Anchor %>% filter(resolution=="2km") %>% mutate(jun_diff=(junMean-10.0), jul_diff=(julMean-12.2), aug_diff=(augMean-11.9), sep_diff=(sepMean-8.5))
 
 ggplot(data=res_2km) + geom_point(aes(x=daterange, y=jun_diff, colour=factor(scenario))) +theme(axis.text.x = element_text(angle = 45))
@@ -50,5 +50,21 @@ ggplot(data=res_2km) + geom_point(aes(x=daterange, y=sep_diff, colour=factor(sce
                                                                                     
 ```
 
+#precipitation
+```{r cars}
+Anchor_p <- snap %>% filter(community=="Anchor Point" & type=="Precipitation") %>% select(community, type, daterange, scenario,resolution, junMean, julMean,  augMean, sepMean) 
+
+#calculate percent increases in precipitation
+res_2km_p <- Anchor %>% filter(resolution=="2km") %>% mutate(jun_diff=((junMean-31.0)/31), jul_diff=((julMean-39)/39), aug_diff=((augMean-60)/60), sep_diff=((sepMean-85)/85))
+
+ggplot(data=res_2km_p) + geom_point(aes(x=daterange, y=jun_diff, colour=factor(scenario))) +theme(axis.text.x = element_text(angle = 45))
+
+ggplot(data=res_2km_p) + geom_point(aes(x=daterange, y=jul_diff, colour=factor(scenario))) +theme(axis.text.x = element_text(angle = 45))
+
+ggplot(data=res_2km_p) + geom_point(aes(x=daterange, y=aug_diff, colour=factor(scenario))) +theme(axis.text.x = element_text(angle = 45))
+
+ggplot(data=res_2km_p) + geom_point(aes(x=daterange, y=sep_diff, colour=factor(scenario))) +theme(axis.text.x = element_text(angle = 45))
+                                                                                    
+```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

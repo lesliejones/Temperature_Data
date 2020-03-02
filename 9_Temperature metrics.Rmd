@@ -19,14 +19,14 @@ load(file = "output/preds.Rdata")
 
 ```{r}
 
-mets <- preds %>%  
+mets <- preds %>%  filter(salmon>0) %>% 
   filter(rca_id %in% 900:1000) %>% 
   mutate(MA_mean = rollmean(preds, k = 7, align = "center", fill = NA)) %>% 
   group_by(rca_id, year) %>% 
   summarize(MxDAT = max(preds),
             MxDAT_jd = day[max(preds) == preds],
             MA7d_DAT = max(MA_mean, na.rm = TRUE),
-            MA7d_DAT = day[max(MA_mean, na.rm = TRUE) == MA_mean],
+            MA7d_DAT_jd = day[max(MA_mean, na.rm = TRUE) == MA_mean][1],
             CDD = sum(preds),
             RNG = max(preds) - min(preds),
             SIGMA_MN = var(preds),
