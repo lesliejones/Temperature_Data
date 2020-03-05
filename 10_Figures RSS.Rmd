@@ -1,0 +1,55 @@
+---
+title: "10_Figures RSS"
+author: "Becky"
+date: "3/3/2020"
+output: html_document
+---
+
+Load files needed for creating figures. Leslie filtered the predictions files by Chinook and coho and life stages: rearing, spawning, and present in script 5.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#Load predictions data frame.
+# load(file = "output/preds.Rdata")
+
+#load chinook rearing and spawning datasets
+load(file = "output/K_r.Rdata")
+load(file = "output/K_s.Rdata")
+load(file = "output/K_p.Rdata")
+
+load(file = "output/CO_r.Rdata")
+load(file = "output/CO_s.Rdata")
+load(file = "output/CO_p.Rdata")
+
+```
+
+
+Plots that show distributions of temperatures by decade. To show the distributions of temperatures experienced by each species and life stage, need a mean +/- 2 SD. 
+
+```{r}
+
+
+#Chinook rearing
+decade_K_r <- K_r %>% 
+  group_by(day, year) %>% 
+  summarize(mean_yr = mean(preds), sd_yr = sd(preds)) %>% 
+  mutate(decade = case_when(year< 1990 ~ 1980, 
+                            year >= 1990 & year < 2000 ~ 1990, 
+                            year >=2000 & year < 2010 ~ 2000, 
+                            year>2009 ~ 2010))
+
+decade_K_r %>%
+  ggplot() +
+  geom_line(aes(x = day, y = mean_yr, color = as.factor(year)), show.legend = FALSE) +
+  geom_ribbon(aes(x = day, ymin = mean_yr - sd_yr, ymax = mean_yr + sd_yr, fill = as.factor(year)),
+              alpha = 0.1, show.legend = FALSE) + 
+  facet_wrap(~decade) + 
+  theme_bw() +
+  ggtitle("Mean daily temperatures by year for Chinook rearing habitat") 
+
+ggsave("salmon_figs/Mean daily chinook rearing thermal curve.jpeg", plot=last_plot())
+
+
+```
+

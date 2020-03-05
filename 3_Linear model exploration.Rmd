@@ -27,6 +27,7 @@ library(GGally)
 library(Metrics)
 library(broom)
 library(tidyverse)
+library(ggeffects)
 
 
 load(file = "output/temp.Rdata")
@@ -952,15 +953,16 @@ model.form <- model.form3
 model.data <- fall_meanT
 
 #loop for spatial cross-validation
-  sites <- model.data %>% distinct(Site) %>% pull(Site)
-  site.preds <- tibble()
-  for(i in sites){
-    test.dat <- model.data %>% filter(Site == i)
-    train.dat <- model.data %>% filter(!Site == i)
-    fit <- lm(model.form, data = train.dat)
-    test.dat$preds <- predict(fit, newdata = test.dat)
-    site.preds <- bind_rows(site.preds, test.dat %>% select(Site, sampleDate, meanT, preds))
-  }
+sites <- model.data %>% distinct(Site) %>% pull(Site)
+site.preds <- tibble()
+
+for(i in sites){
+  test.dat <- model.data %>% filter(Site == i)
+  train.dat <- model.data %>% filter(!Site == i)
+  fit <- lm(model.form, data = train.dat)
+  test.dat$preds <- predict(fit, newdata = test.dat)
+  site.preds <- bind_rows(site.preds, test.dat %>% select(Site, sampleDate, meanT, preds))
+}
 
 fall_meanT %>%
   distinct(Site, cont_area) %>% 
@@ -979,6 +981,34 @@ fall_meanT %>%
 fall_meanT %>% 
   count(Site, year) %>% 
   spread(key = year, value = n)
+```
+
+Effect size of precipitation on fall temperatures.
+
+```{r}
+
+fall.prcp <- ggpredict(fall.lm, terms  = "prcp5")
+
+plot(fall.prcp)
+
+summary(fall_meanT)
+
+fall_meanT %>% 
+  group_by(day) %>% 
+  summarize(prcp_mn = mean(prcp5),
+            prcp_sd = sd(prcp5)) %>% 
+  ggplot() +
+  geom_line(aes(x = day, y = prcp_mn)) +
+  geom_ribbon(aes(x = day, ymin = prcp_mn - prcp_sd, ymax = prcp_mn + prcp_sd), alpha = 0.1)
+```
+
+
+
+```{r}
+fall.swe <- ggpredict(fall.lm, terms  = c("sweA1", "day"))
+
+plot(fall.swe)
+
 ```
 
 

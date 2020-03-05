@@ -1,0 +1,167 @@
+---
+title: "11_Future Scenarios"
+author: "Becky"
+date: "3/5/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lubridate)
+library(tidyverse)
+
+load("output/preds.Rdata")
+load("output/spring.lm.Rdata")
+load("output/fall.lm.Rdata")
+
+```
+
+
+# Future Scenarios
+
+Create a current baseline using predictions for 2000-2018. Baseline includes average values across all RCAs for 3-day air temperatures and 5-day precipitation. Then grab a low snow and high snow year within that baseline. 
+
+New data for predicting stream tempatures:
+
+* Scenario 1: low snow and 2 deg air temperature change.
+* Scenario 2: low snow and 4 deg air temperature change.
+* Scenario 3: high snow and 2 deg air temperature change.
+* Scenario 4: high snow and 4 deg air temperature change.
+
+Identify low and high snow years within the baseline period.
+
+5th lowest snow year was 2001 (38 mm) and 5th highest snow year was 2007 (97 mm).
+
+```{r}
+swe_bl <- preds %>% 
+  filter(year %in% 2000:2018) %>% 
+  group_by(year) %>% 
+  summarize(sweA1 = mean(sweA1))
+
+swe_bl %>% 
+  ggplot(aes(y = fct_reorder(as.factor(year), sweA1), x = sweA1)) +
+  geom_point() 
+
+swe_bl %>% 
+  ggplot() +
+  geom_histogram(aes(x = sweA1), bins = 10)
+
+```
+
+
+Create data frames for prediction under the four scenarios.
+
+```{r}
+
+newData_S1 <- preds %>% 
+  filter(year %in% 2000:2018) %>% 
+  group_by(rca_id, day, cont_area, reach_slope, rca_elev_mn) %>% 
+  summarize(tair3 = mean(tair3) + 2,
+            prcp5 = mean(prcp5),
+            preds_bl = mean(preds)) %>% 
+  left_join(preds %>% filter(year == 2001) %>% distinct(rca_id, sweA1))
+
+newData_S2 <- preds %>% 
+  filter(year %in% 2000:2018) %>% 
+  group_by(rca_id, day, cont_area, reach_slope, rca_elev_mn) %>% 
+  summarize(tair3 = mean(tair3) + 4,
+            prcp5 = mean(prcp5),
+            preds_bl = mean(preds)) %>% 
+  left_join(preds %>% filter(year == 2001) %>% distinct(rca_id, sweA1))
+
+newData_S3 <- preds %>% 
+  filter(year %in% 2000:2018) %>% 
+  group_by(rca_id, day, cont_area, reach_slope, rca_elev_mn) %>% 
+  summarize(tair3 = mean(tair3) + 2,
+            prcp5 = mean(prcp5),
+            preds_bl = mean(preds)) %>% 
+  left_join(preds %>% filter(year == 2007) %>% distinct(rca_id, sweA1))
+
+newData_S4 <- preds %>% 
+  filter(year %in% 2000:2018) %>% 
+  group_by(rca_id, day, cont_area, reach_slope, rca_elev_mn) %>% 
+  summarize(tair3 = mean(tair3) + 4,
+            prcp5 = mean(prcp5),
+            preds_bl = mean(preds)) %>% 
+  left_join(preds %>% filter(year == 2007) %>% distinct(rca_id, sweA1))
+
+```
+
+Predictions for four scenarios.
+
+```{r}
+
+
+scenario_predictions <- function(newData_byScenario) {
+  spring_dat <- newData_byScenario %>% filter(day < 202)
+  spring_preds <- spring_dat %>% 
+    ungroup() %>% 
+    mutate(preds_fut = predict(spring.lm, newdata = spring_dat))
+  fall_dat <- newData_byScenario %>% filter(day > 201)
+  fall_preds <- fall_dat %>% 
+    ungroup() %>% 
+    mutate(preds_fut = predict(fall.lm, newdata = fall_dat))
+  preds <- bind_rows(spring_preds, fall_preds) %>% 
+    mutate(change = preds_fut - preds_bl,
+           date = as.Date(day, origin = "2018-01-01"),
+           month = month(date))
+  return(preds)
+}
+
+preds_S1 <- scenario_predictions(newData_S1)
+save(preds_S1, file = "output/preds_S1.Rdata")
+
+preds_S2 <- scenario_predictions(newData_S2)
+save(preds_S2, file = "output/preds_S2.Rdata")
+
+preds_S3 <- scenario_predictions(newData_S3)
+save(preds_S3, file = "output/preds_S3.Rdata")
+
+preds_S4 <- scenario_predictions(newData_S4)
+save(preds_S4, file = "output/preds_S4.Rdata")
+
+
+```
+
+
+Differences for four scenarios.
+
+
+```{r}
+
+scen_change <- bind_rows(preds_S1 %>%
+            group_by(rca_id, month) %>%
+            summarize(ave_change = mean(change)) %>%
+            mutate(scenario = "S1"),
+          preds_S2 %>% 
+            group_by(rca_id, month) %>% 
+            summarize(ave_change = mean(change)) %>%
+            mutate(scenario = "S2"),
+          preds_S3 %>% 
+            group_by(rca_id, month) %>% 
+            summarize(ave_change = mean(change)) %>%
+            mutate(scenario = "S3"),
+          preds_S4 %>% 
+            group_by(rca_id, month) %>% 
+            summarize(ave_change = mean(change)) %>%
+            mutate(scenario = "S4"))
+
+scen_change %>%
+  mutate(scenario = factor(scenario, labels = c("Low snow + 2 deg change",
+                                                "Low snow + 4 deg change",
+                                                "High snow + 2 deg change",
+                                                "High snow + 4 deg change"))) %>% 
+  ggplot() +
+  geom_density(aes(x = ave_change, fill = as.factor(month)), alpha = 0.4) +
+  facet_wrap(~scenario) +
+  theme_bw() +
+  labs(x = "Stream temperature change",
+       title = "Changes in stream temperature for four scenarios",
+       subtitle = "Averages across all rcas and dates within each month")
+
+ggsave("output/Density plots of changes by scenario.jpg")
+ 
+
+```
+
