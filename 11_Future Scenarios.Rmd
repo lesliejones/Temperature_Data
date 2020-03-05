@@ -121,6 +121,12 @@ save(preds_S3, file = "output/preds_S3.Rdata")
 preds_S4 <- scenario_predictions(newData_S4)
 save(preds_S4, file = "output/preds_S4.Rdata")
 
+#merge with spatial data and export
+rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_06022020") %>% mutate(rca_id=reach_id) %>% select(c(rca_id, Shape, Shape_Length))
+
+pred_S4 <- sp::merge (rca_reach,preds_S4, by="rca_id") 
+st_write(pred_S4, "Spatial_data/Anchor/shapefile_preds/preds_S4.shp", driver="ESRI Shapefile")
+
 
 ```
 
