@@ -104,7 +104,7 @@ scenario_predictions <- function(newData_byScenario) {
     mutate(preds_fut = predict(fall.lm, newdata = fall_dat))
   preds <- bind_rows(spring_preds, fall_preds) %>% 
     mutate(change = preds_fut - preds_bl,
-           date = as.Date(day, origin = "2018-01-01"),
+           date = as.Date(day, origin = "1980-01-01"),
            month = month(date))
   return(preds)
 }
@@ -148,6 +148,7 @@ scen_change <- bind_rows(preds_S1 %>%
             mutate(scenario = "S4"))
 
 scen_change %>%
+  filter(month %in% 6:9) %>% 
   mutate(scenario = factor(scenario, labels = c("Low snow + 2 deg change",
                                                 "Low snow + 4 deg change",
                                                 "High snow + 2 deg change",
@@ -158,7 +159,8 @@ scen_change %>%
   theme_bw() +
   labs(x = "Stream temperature change",
        title = "Changes in stream temperature for four scenarios",
-       subtitle = "Averages across all rcas and dates within each month")
+       subtitle = "Average monthly change for all rcas",
+       fill = "month")
 
 ggsave("output/Density plots of changes by scenario.jpg")
  
