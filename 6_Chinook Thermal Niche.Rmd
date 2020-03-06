@@ -102,7 +102,8 @@ Sep %>% knitr::kable(caption = "Mean September temperatures for Chinook habitat"
 mean_p <- K_p %>% group_by(day) %>% summarize(mean_day = mean(preds), sd_p = sd(preds)) 
 
 ggplot(data=mean_p) +
-  geom_smooth(aes(x = day, y = mean_day), show.legend = FALSE) + labs(x= "Day of Year", y="Stream Temperature") +
+  geom_line (aes(x = day, y = mean_day), show.legend = FALSE) + labs(x= "Day of Year", y="Stream Temperature") +
+  geom_ribbon (aes(x = day, ymin = mean_day- 2*sd_p, ymax=mean_day + 2*sd_p), alpha=0.1, show.legend = FALSE) +
   ggtitle("Mean daily predictions 1980-2018 for Chinook presence habitat") 
 
 ggsave("Anchor_chinook_plots/Chinook Presence: Mean daily temperature 1980-2018.jpeg",  plot=last_plot())
