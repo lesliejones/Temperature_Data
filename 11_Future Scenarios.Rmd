@@ -10,6 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(lubridate)
 library(tidyverse)
+library(sf)
 
 load("output/preds.Rdata")
 load("output/spring.lm.Rdata")
@@ -90,8 +91,9 @@ newData_S4 <- preds %>%
 
 Predictions for four scenarios.
 
-```{r}
+Function to predict by spring and fall models and bind data together.
 
+```{r}
 
 scenario_predictions <- function(newData_byScenario) {
   spring_dat <- newData_byScenario %>% filter(day < 202)
@@ -109,6 +111,11 @@ scenario_predictions <- function(newData_byScenario) {
   return(preds)
 }
 
+```
+
+Predict across four scenarios.
+
+```{r}
 preds_S1 <- scenario_predictions(newData_S1)
 save(preds_S1, file = "output/preds_S1.Rdata")
 
@@ -121,17 +128,145 @@ save(preds_S3, file = "output/preds_S3.Rdata")
 preds_S4 <- scenario_predictions(newData_S4)
 save(preds_S4, file = "output/preds_S4.Rdata")
 
-#merge with spatial data and export
-rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_06022020") %>% mutate(rca_id=reach_id) %>% select(c(rca_id, Shape, Shape_Length))
+```
 
-pred_S4 <- sp::merge (rca_reach,preds_S4, by="rca_id") 
-st_write(pred_S4, "Spatial_data/Anchor/shapefile_preds/preds_S4.shp", driver="ESRI Shapefile")
+
+For each scenario, calculate the mean monthly temperature and the mean monthly temperature change. Include the baseline mean monthly temperature as well for putting in ArcGIS.
+
+Read in reaches feature class from geodb.
+
+```{r}
+fgdb <- "T:\\Aquatic\\KFHP\\Geodatabases\\Anchor.gdb"
+
+#merge with spatial data and export
+rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_06022020") %>%
+  mutate(rca_id = reach_id) %>% 
+  select(rca_id, Shape, Shape_Length)
+```
+
+Create monthly metrics. 
+
+```{r}
+
+baseline_monthly_temps <- preds_S1 %>% 
+  filter(month %in% 6:9) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_bl = mean(preds_bl)) %>% 
+  spread(key = month, value = mean_bl) %>% 
+  rename(bl_6 = "6", bl_7 = "7", bl_8 = "8", bl_9 = "9")
+
+S1_monthly_temps <- preds_S1 %>% 
+  filter(month %in% 6:9) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_fut = mean(preds_fut)) %>% 
+  spread(key = month, value = mean_fut) %>% 
+  rename(S1_6 = "6", S1_7 = "7", S1_8 = "8", S1_9 = "9")
+
+S2_monthly_temps <- preds_S2 %>% 
+  filter(month %in% 6:9) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_fut = mean(preds_fut)) %>% 
+  spread(key = month, value = mean_fut) %>% 
+  rename(S2_6 = "6", S2_7 = "7", S2_8 = "8", S2_9 = "9")
+
+S3_monthly_temps <- preds_S3 %>% 
+  filter(month %in% 6:9) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_fut = mean(preds_fut)) %>% 
+  spread(key = month, value = mean_fut) %>% 
+  rename(S3_6 = "6", S3_7 = "7", S3_8 = "8", S3_9 = "9")
+
+S4_monthly_temps <- preds_S4 %>% 
+  filter(month %in% 6:9) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_fut = mean(preds_fut)) %>% 
+  spread(key = month, value = mean_fut) %>% 
+  rename(S4_6 = "6", S4_7 = "7", S4_8 = "8", S4_9 = "9")
+
+```
+
+Save to shapefiles.
+
+```{r}
+
+
+rcas_baseline <- sp::merge (rca_reach, baseline_monthly_temps, by="rca_id") 
+st_write(rcas_baseline, "output/Shapefiles/rcas_baseline.shp", driver="ESRI Shapefile")
+
+rcas_S1 <- sp::merge (rca_reach, S1_monthly_temps, by="rca_id") 
+st_write(rcas_S1, "output/Shapefiles/rcas_S1.shp", driver="ESRI Shapefile")
+
+rcas_S2 <- sp::merge (rca_reach, S2_monthly_temps, by="rca_id") 
+st_write(rcas_S2, "output/Shapefiles/rcas_S2.shp", driver="ESRI Shapefile")
+
+rcas_S3 <- sp::merge (rca_reach, S3_monthly_temps, by="rca_id") 
+st_write(rcas_S3, "output/Shapefiles/rcas_S3.shp", driver="ESRI Shapefile")
+
+rcas_S4 <- sp::merge (rca_reach, S4_monthly_temps, by="rca_id") 
+st_write(rcas_S4, "output/Shapefiles/rcas_S4.shp", driver="ESRI Shapefile")
 
 
 ```
 
 
 Differences for four scenarios.
+
+```{r}
+S1_monthly_diffs <- preds_S1 %>% 
+  filter(month %in% 6:9) %>% 
+  mutate(diff = preds_fut - preds_bl) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_diff = mean(diff)) %>% 
+  spread(key = month, value = mean_diff) %>% 
+  rename(S1_6 = "6", S1_7 = "7", S1_8 = "8", S1_9 = "9")
+
+S2_monthly_diffs <- preds_S2 %>% 
+  filter(month %in% 6:9) %>% 
+  mutate(diff = preds_fut - preds_bl) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_diff = mean(diff)) %>% 
+  spread(key = month, value = mean_diff) %>% 
+  rename(S2_6 = "6", S2_7 = "7", S2_8 = "8", S2_9 = "9")
+
+S3_monthly_diffs <- preds_S3 %>% 
+  filter(month %in% 6:9) %>% 
+  mutate(diff = preds_fut - preds_bl) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_diff = mean(diff)) %>% 
+  spread(key = month, value = mean_diff) %>% 
+  rename(S3_6 = "6", S3_7 = "7", S3_8 = "8", S3_9 = "9")
+
+S4_monthly_diffs <- preds_S4 %>% 
+  filter(month %in% 6:9) %>% 
+  mutate(diff = preds_fut - preds_bl) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_diff = mean(diff)) %>% 
+  spread(key = month, value = mean_diff) %>% 
+  rename(S4_6 = "6", S4_7 = "7", S4_8 = "8", S4_9 = "9")
+
+
+```
+
+Save to shapefiles.
+
+```{r}
+
+rcas_S1_diff <- sp::merge (rca_reach, S1_monthly_diffs, by="rca_id") 
+st_write(rcas_S1_diff, "output/Shapefiles/rcas_S1_diff.shp", driver="ESRI Shapefile")
+
+rcas_S2_diff <- sp::merge (rca_reach, S2_monthly_diffs, by="rca_id") 
+st_write(rcas_S2_diff, "output/Shapefiles/rcas_S2_diff.shp", driver="ESRI Shapefile")
+
+rcas_S3_diff <- sp::merge (rca_reach, S3_monthly_diffs, by="rca_id") 
+st_write(rcas_S3_diff, "output/Shapefiles/rcas_S3_diff.shp", driver="ESRI Shapefile")
+
+rcas_S4_diff <- sp::merge (rca_reach, S4_monthly_diffs, by="rca_id") 
+st_write(rcas_S4_diff, "output/Shapefiles/rcas_S4_diff.shp", driver="ESRI Shapefile")
+
+
+```
+
+
 
 
 ```{r}
@@ -170,6 +305,20 @@ scen_change %>%
 
 ggsave("output/Density plots of changes by scenario.jpg")
  
+
+```
+
+Compare density plots of baseline to future by month for each scenario, using temperatures. Density plots show how distributions are changing. For Chinook rearing, spawning, present.
+
+
+```{r}
+
+preds_S4 %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_bl = mean(preds_bl),
+            mean_fut = mean(preds_fut)) %>% 
+  ggplot() +
+  geom_density(aes(x = preds_bl, fill = as.factor(month)))
 
 ```
 

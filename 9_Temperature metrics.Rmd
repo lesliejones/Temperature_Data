@@ -19,19 +19,24 @@ load(file = "output/preds.Rdata")
 
 ```{r}
 
-mets <- preds %>%  filter(salmon>0) %>% 
-  filter(rca_id %in% 900:1000) %>% 
-  mutate(MA_mean = rollmean(preds, k = 7, align = "center", fill = NA)) %>% 
+mets <- preds %>%  
+  # filter(rca_id %in% 1:5) %>%
+  select(rca_id, year, month, day, preds) %>% 
+  mutate(MA_mean = rollmean(preds, k = 7, align = "center", fill = NA)) %>%  
   group_by(rca_id, year) %>% 
   summarize(MxDAT = max(preds),
-            MxDAT_jd = day[max(preds) == preds],
+            MxDAT_jd = day[max(preds) == preds][1],
             MA7d_DAT = max(MA_mean, na.rm = TRUE),
             MA7d_DAT_jd = day[max(MA_mean, na.rm = TRUE) == MA_mean][1],
             CDD = sum(preds),
             RNG = max(preds) - min(preds),
             SIGMA_MN = var(preds),
-            SUM_13_jas = sum(preds[month(date) %in% 7:9] > 13),
-            SIGMA_MN_jas = var(preds[month(date) %in% 7:9]))
+            SUM_13_jas = sum(preds[month %in% 7:9] > 13),
+            SIGMA_MN_jas = var(preds[month %in% 7:9]),
+            June_mn = mean(preds[month == 6]),
+            July_mn = mean(preds[month == 7]),
+            Aug_mn = mean(preds[month == 8]),
+            Sep_mn = mean(preds[month == 9]))
 
 preds %>% 
   filter(rca_id == 1, year == 1985) %>% 
@@ -42,22 +47,37 @@ preds %>%
 
 ```
 
-Plot a few temperature metrics over time.
+What are just the salmon rcas?
+
+```{r}
+K_rcas <- preds %>% 
+  distinct(rca_id, K_p) %>% 
+  filter(K_p > 0)
+
+Ks_rcas <- preds %>% 
+  distinct(rca_id, K_s) %>% 
+  filter(K_s > 0)
+```
+
+
+
+Plot a few temperature metrics over time - this one focuses on chinook rcas.
 
 ```{r}
 
-p1 <- mets %>% 
-  gather(key = "metric", value = "value", -rca_id, -year) %>% 
-  group_by(year, metric) %>% 
-  summarize(mean_value = mean(value)) %>% 
+p1 <- left_join(Ks_rcas, mets) %>% 
+  gather(key = "metric", value = "value", -rca_id, -year, -K_s) %>% 
+  group_by(year, metric) %>%
+  summarize(mean_value = mean(value)) %>%
   ggplot(aes(x = year, y = mean_value)) +
   geom_point() +
   geom_smooth() +
   facet_wrap(~metric, scales = "free_y")
 
 p1
-ggsave(p1, "output/metrics over time.jpg", width = , height = )
+ggsave(p1, "output/metrics over time.jpg")
 
 ```
 
+For future scenarios, could calculate metrics and add them to the plot of metrics changing over time. Show just for MWMT and timing of MWMT and manually extend scale, then add the four scenarios as futures points that are labelled.
 

@@ -53,3 +53,24 @@ ggsave("salmon_figs/Mean daily chinook rearing thermal curve.jpeg", plot=last_pl
 
 ```
 
+Boxplots by day. 
+
+```{r}
+
+K_p %>% 
+  filter(day %in% 150:210) %>% 
+  ggplot(aes(x = as.factor(day), y = preds)) +
+  geom_boxplot() + 
+  facet_wrap(~decade)
+
+```
+
+Current baseline (2000-2018) temperature for Chinook rearing.
+
+```{r}
+
+
+
+```
+
+
