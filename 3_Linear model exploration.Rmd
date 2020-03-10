@@ -810,6 +810,23 @@ save(spring.lm, file = "output/spring.lm.Rdata")
 ```
 
 
+Look at temporal auto-correlation in residuals.
+
+```{r}
+spring_meanT %>% 
+  mutate(resid = resid(spring.lm),
+         preds = predict(spring.lm)) %>% 
+  filter(Site == "CIK14", year %in% c(2008, 2015)) %>% 
+  ggplot() +
+  geom_point(aes(x = day, y = meanT)) +
+  geom_point(aes(x = day, y = preds), color = "red") +
+  geom_point(aes(x = day, y = resid), color = "gray") +
+  facet_wrap(~year)
+  
+  
+```
+
+
 
 
 # FALL Backwards selection from a global model

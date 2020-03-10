@@ -9,7 +9,13 @@ Load files needed for creating figures. Leslie filtered the predictions files by
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
 
+```
+
+Predictions across different habitats.
+
+```{r}
 #Load predictions data frame.
 # load(file = "output/preds.Rdata")
 
@@ -22,6 +28,116 @@ load(file = "output/CO_r.Rdata")
 load(file = "output/CO_s.Rdata")
 load(file = "output/CO_p.Rdata")
 
+```
+
+# Empirical data
+
+Create a new variable with bins by watershed size.
+
+```{r}
+temp %>% 
+  distinct(Site, cont_area) %>% 
+  count(cont_area) 
+
+temp %>% 
+  mutate(cont_area_fc = case_when())
+
+```
+
+
+Plots showing range of empirical data, distribution across sites and years.
+
+```{r}
+load(file = "output/temp.Rdata")
+
+
+
+temp %>% 
+  distinct(Site, year)
+
+
+all.days <- temp %>% complete(day, nesting(Site, cont_area))
+
+temp %>% 
+  mutate(site.year = paste(Site, year, sep = ""),
+         cont_area_fc = cut(cont_area, seq(0, 600, 150),
+                            labels = c("0-150", "151-300", "301-450", "451-579"))) %>% 
+  complete(day, nesting(site.year, cont_area_fc)) %>% 
+  # filter(site.year == "APU82015") %>%
+  select(site.year, meanT, day, cont_area_fc) %>% 
+  ggplot(aes(x = day, y = meanT, group = site.year)) +
+  geom_line(show.legend = FALSE) +
+  facet_wrap(~cont_area_fc) +
+  scale_x_continuous(breaks = c(166, 196, 227, 258), 
+                     labels = c("June", "July", "August", "September")) +
+  theme_bw() +
+  theme(axis.title.x = element_blank(),
+        text = element_text(size = 18)) +
+  labs(y = "Mean Daily Temperature (˚C)",
+       title = bquote("Stream Temperatures by Watershed Area"~(km^2)))
+
+ggsave("output/Empirical Stream Temp Data by wtd area.jpg", width = 10, height = 8)
+
+
+
+
+
+```
+
+
+
+```{r}
+
+temp %>% 
+  count(Site, cont_area, year)
+
+temp %>% 
+  mutate(cont_area_fc = cut(cont_area, breaks = seq(0, 600, 150), 
+                            labels = c("0-150", "151-300", "301-450", "451-579"))) %>% 
+  count(cont_area_fc, year) %>% 
+  ggplot(aes(x = cont_area_fc, y = year, color = n)) +
+  geom_point(shape = 15, size = 10) +
+  theme_bw() +
+  theme(axis.title.y = element_blank(), legend.position = "bottom", 
+        text = element_text(size = 18)) +
+  labs(x = bquote("Contributing area"~(km^2)), color = "Days per year")
+
+ggsave("output/Data Availability.jpg", width = 6, height = 6)
+
+```
+
+
+# Predictions
+
+Plot of observed v fitted values.
+
+```{r}
+load(file = "output/temp.Rdata")
+
+temp %>% 
+  left_join(preds %>% select(rca_id, date, preds), by = c("rca_id" = "rca_id", "sampleDate" = "date")) %>% 
+  mutate(cont_area_fc = cut(cont_area, breaks = seq(0, 600, 150), 
+                            labels = c("0-150", "151-300", "301-450", "451-579")),
+         season = case_when(day < 202 ~ "spring",
+                            TRUE ~ "fall")) %>% 
+  ggplot() +
+  geom_point(aes(x = preds, y = meanT, color = season), shape = 1) +
+  facet_wrap(~cont_area_fc) +
+  theme_bw()
+```
+
+Number of sites by watershed size.
+
+```{r}
+temp %>% 
+  mutate(cont_area_fc = cut(cont_area, breaks = seq(0, 600, 150), 
+                            labels = c("0-150", "151-300", "301-450", "451-579"))) %>% 
+  distinct(cont_area_fc, Site) %>% 
+  count(cont_area_fc)
+
+temp %>% distinct(cont_area, Site) %>% 
+  ggplot() +
+  geom_point(aes(x = cont_area, y = fct_reorder(Site, cont_area)))
 ```
 
 
@@ -42,8 +158,9 @@ decade_K_r <- K_r %>%
 decade_K_r %>%
   ggplot() +
   geom_line(aes(x = day, y = mean_yr, color = as.factor(year)), show.legend = FALSE) +
-  geom_ribbon(aes(x = day, ymin = mean_yr - sd_yr, ymax = mean_yr + sd_yr, fill = as.factor(year)),
-              alpha = 0.1, show.legend = FALSE) + 
+  # geom_ribbon(aes(x = day, ymin = mean_yr - 1.96 * sd_yr, 
+  #                 ymax = mean_yr + 1.96 * sd_yr, fill = as.factor(year)),
+  #             alpha = 0.1, show.legend = FALSE) + 
   facet_wrap(~decade) + 
   theme_bw() +
   ggtitle("Mean daily temperatures by year for Chinook rearing habitat") 
@@ -73,4 +190,33 @@ Current baseline (2000-2018) temperature for Chinook rearing.
 
 ```
 
+
+# Future scenarios
+
+
+```{r}
+load("output/preds_S1.Rdata")
+load("output/preds_S2.Rdata")
+load("output/preds_S3.Rdata")
+load("output/preds_S4.Rdata")
+```
+
+
+```{r}
+K_rcas <- preds %>% 
+  filter(K_p == 1) %>% 
+  distinct(rca_id, reach_length)
+
+
+K_rcas
+
+preds_S4 %>% 
+  right_join(K_rcas) %>%
+  group_by(rca_id, month) %>% 
+  summarize(mean_temp = mean())
+  ggplot() +
+  geom_histogram(aes(x = preds_bl)) 
+  geom_histogram(aes(x = preds_fut), color = "red", alpha = 0.1)
+
+```
 
