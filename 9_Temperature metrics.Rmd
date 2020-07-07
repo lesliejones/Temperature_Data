@@ -12,18 +12,29 @@ library(tidyverse); library(zoo); library(lubridate)
 
 load(file = "output/preds.Rdata")
 
+
 ```
 
 
 # Calculate metrics for each rca and year.
 
+Careful with the moving average because we want them to start and stop by each rca and year.
+
+STOPPED HERE NEED TO FIX MA IN METS FUNCTION MWAT NOT CORRECT.
+
 ```{r}
 
-mets <- preds %>%  
-  # filter(rca_id %in% 1:5) %>%
-  select(rca_id, year, month, day, preds) %>% 
-  mutate(MA_mean = rollmean(preds, k = 7, align = "center", fill = NA)) %>%  
+preds %>%  
+  filter(rca_id %in% c(1:2), year %in% c(1990:1991)) %>% 
   group_by(rca_id, year) %>% 
+  mutate(MA_mean = rollmean(preds, k = 7, align = "center", fill = NA)) %>% 
+  arrange(rca_id, year, day)
+
+
+mets <- preds %>%  
+  # filter(rca_id == 1, year == 1990) %>%
+  group_by(rca_id, year) %>% 
+  mutate(MA_mean = rollmean(preds, k = 7, align = "center", fill = NA)) %>%  
   summarize(MxDAT = max(preds),
             MxDAT_jd = day[max(preds) == preds][1],
             MA7d_DAT = max(MA_mean, na.rm = TRUE),
@@ -38,11 +49,18 @@ mets <- preds %>%
             Aug_mn = mean(preds[month == 8]),
             Sep_mn = mean(preds[month == 9]))
 
+
+```
+
+
+
+```{r}
 preds %>% 
-  filter(rca_id == 1, year == 1985) %>% 
+  filter(rca_id == 1, year == 1990) %>% 
   mutate(MA_mean = rollmean(preds, k = 7, align = "center", fill = NA)) %>% 
-  ggplot(aes(x = day, y = MA_mean)) + 
-  geom_line()
+  group_by(rca_id, year) %>% 
+  summarize(max(MA_mean, na.rm = TRUE),
+            mean(preds[month == 7]))
 
 
 ```
@@ -80,4 +98,41 @@ ggsave(p1, "output/metrics over time.jpg")
 ```
 
 For future scenarios, could calculate metrics and add them to the plot of metrics changing over time. Show just for MWMT and timing of MWMT and manually extend scale, then add the four scenarios as futures points that are labelled.
+
+
+Select four historic scenarios: 
+
+* warm summer, low snowpack = 2016. Mean summer air temperature across all rcas = 11.6. Mean april 1st swe across all rcas = 6 mm.
+* warm summer, high snowpack = 1990. Mean summer air temperature = 10.7. Mean swe = 106 mm.
+* cold summer, low snowpack = 1982. Mean summer air temperature = 9.5. Mean swe = 3 mm.
+* cold summer, high snowpack = 2008. Mean summer air temperature = 9.3. Mean swe = 131 mm.
+
+Table of mean summer air temperatures across all rcas by year and mean April 1st SWE across all rcas by year.
+
+```{r}
+
+preds %>% 
+  group_by(year) %>% 
+  summarize(mn_air = mean(tair3),
+            mn_swe = mean(sweA1)) %>% 
+  arrange(desc(mn_air))
+
+```
+
+Save metrics to a table by rca_id for mapping. Selected mean July temperature and MWAT.
+
+```{r}
+
+left_join(mets %>% 
+            filter(year %in% c(2016, 1990, 1992, 2008)) %>% 
+            select(rca_id, year, July_mn) %>% 
+            pivot_wider(names_from = year, values_from = July_mn, names_prefix = "July_mean_"),
+          mets %>% 
+            filter(year %in% c(2016, 1990, 1992, 2008)) %>% 
+            select(rca_id, year, MA7d_DAT) %>% 
+            pivot_wider(names_from = year, values_from = MA7d_DAT, names_prefix = "MA7d_DAT_")) %>% 
+  write.csv(file = "output/historic_scens_mets_by_rca.csv")
+
+```
+
 

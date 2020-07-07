@@ -10,11 +10,11 @@ knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
 
 library(lubridate)
 library(rgdal)
-library(zoo)
+# library(zoo)
 library(sf)
 library(corrplot)
 library(MuMIn)
-library(ape)
+# library(ape)
 library(readxl)
 # library(VIF)
 # library(jtools)
@@ -23,11 +23,13 @@ library(car)
 library(corrplot)
 library(mgcv)
 library(visreg)
-library(GGally)
+# library(GGally)
 library(Metrics)
 library(broom)
 library(tidyverse)
 library(ggeffects)
+library(sjPlot)
+library(MASS)
 
 
 load(file = "output/temp.Rdata")
@@ -827,6 +829,36 @@ spring_meanT %>%
 ```
 
 
+## Check for random effects
+
+
+```{r}
+
+anchorSpr.form <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland + 
+                  sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day)
+
+S1 <- gls(anchorSpr.form, data = spring_meanT, na.action = "na.fail")
+
+S2 <- gam(meanT ~ s(tair3, k = 4) + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland + 
+                  sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day,
+                 data = spring_meanT, na.action = "na.fail")
+
+S3 <- lme(anchorSpr.form, data = spring_meanT, 
+                 random = ~ 1|HUC12, na.action = "na.fail") 
+
+S4 <- lme(anchorSpr.form, data = spring_meanT, 
+                 random = ~ tair3|HUC12, na.action = "na.fail") 
+
+data.frame(AIC = AIC(S1, S2, S3, S4),
+           rmse = c(rmse(spring_meanT$meanT, predict(S1)),
+           rmse(spring_meanT$meanT, predict(S2)),
+           rmse(spring_meanT$meanT, predict(S3)),
+           rmse(spring_meanT$meanT, predict(S4))))
+```
+
+
 
 
 # FALL Backwards selection from a global model
@@ -1119,4 +1151,393 @@ sqrt(sum(((predict(all.gam) - temp_meanT$meanT) ^ 2))/6049)
 
 
 ```
+
+
+# SPRING Mixed Effects model
+
+Center the tair variable to fix multicollinearity with squared term.
+
+```{r}
+spring_meanT <- spring_meanT %>% 
+  mutate(tair3c = scale(tair3, scale = FALSE))
+```
+
+Compare fixed effects model with mixed effects model that includes 1) random intercept for huc12, and 2) random intercept and slopes by huc12.
+
+```{r}
+library(nlme)
+
+S1 <- gls(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland + 
+                  sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day, 
+                data = spring_meanT)
+
+S2 <- gls(meanT ~ tair3c + I(tair3c^2) + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland + 
+                  sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day, 
+                data = spring_meanT)
+
+S3 <- lme(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland + 
+                  sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day, random = ~1|HUC_name, 
+                data = spring_meanT)
+
+S4 <- lme(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland + 
+                  sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day, random = ~tair3|HUC_name, 
+                data = spring_meanT)
+
+
+data.frame(AIC = AIC(S1, S2, S3, S4),
+           rmse = c(rmse(spring_meanT$meanT, predict(S1)),
+                    rmse(spring_meanT$meanT, predict(S2)),
+                    rmse(spring_meanT$meanT, predict(S3)),
+                    rmse(spring_meanT$meanT, predict(S4))))
+
+summary(S4)
+intervals(S4)
+random.effects(S4)
+
+temp %>% 
+  count(HUC_name)
+```
+
+Stepwise deletion based on AIC.
+
+```{r}
+library(MASS)
+
+S4.ml <- update(S4, method = "ML")
+S4.sel <- stepAIC(S4.ml)
+S4.sel$anova
+
+summary(S4.sel)
+```
+Look at interactions.
+
+```{r}
+library(sjPlot)
+
+plot_model(S4.sel, type = "int")
+plot_model(S4.sel, type = "pred", terms = "prcp5")
+```
+
+# Summer model
+
+All copied over from Deshka script.
+First add scaled covars to temp.
+
+```{r}
+
+temp.dm <- temp %>% 
+  rename(jd = day, mean = meanT, catchment_elev_mn = rca_elev_mn) %>% 
+  mutate(season = as.factor(case_when(jd < 202 ~ "spring",
+                            jd > 201 ~ "fall")),
+         tair3sc = scale(tair3),
+         jdsc = scale(jd),
+         sweA1sc = scale(sweA1),
+         prcp5sc = scale(prcp5),
+         reach_slopesc = scale(reach_slope),
+         wetlandsc = scale(Wetland),
+         catchment_elev_mnsc = scale(catchment_elev_mn),
+         cont_areasc = scale(cont_area)) 
+```
+
+Full model with all interactions.
+
+```{r}
+
+M1 <- lme(mean ~ tair3sc + I(tair3sc^2) + jdsc + I(jdsc^2) + sweA1sc + prcp5sc + reach_slopesc +
+            wetlandsc + catchment_elev_mnsc + cont_areasc + season +
+            sweA1sc:(jdsc + I(jdsc^2)) + catchment_elev_mnsc:(jdsc + I(jdsc^2)) + 
+            sweA1sc:wetlandsc + wetlandsc:(jdsc + I(jdsc^2)) +
+            season:(tair3sc + I(tair3sc^2)),
+          random = ~ 1|HUC_name, data = temp.dm, na.action = "na.fail") 
+
+M2 <- lme(mean ~ tair3sc + I(tair3sc^2) + jdsc + I(jdsc^2) + sweA1sc + prcp5sc + reach_slopesc +
+            wetlandsc + catchment_elev_mnsc + cont_areasc + season +
+            sweA1sc:(jdsc + I(jdsc^2)) + catchment_elev_mnsc:(jdsc + I(jdsc^2)) + 
+            sweA1sc:wetlandsc + wetlandsc:(jdsc + I(jdsc^2)) +
+            season:(tair3sc + I(tair3sc^2)), random = ~ 1 + tair3sc|HUC_name, data = temp.dm, na.action = "na.fail") 
+
+data.frame(AIC = AIC(M1, M2),
+           rmse = c(rmse(temp.dm$mean, predict(M1)),
+           rmse(temp.dm$mean, predict(M2))))
+
+summary(M2)
+
+intervals(M2)
+
+plot_model(M2, type = "pred", terms = c("jdsc [all]", "sweA1sc"))
+plot_model(M2, type = "pred", terms = c("jdsc [all]", "catchment_elev_mnsc"))
+plot_model(M2, type = "pred", terms = c("jdsc [all]", "wetlandsc"))
+plot_model(M2, type = "pred", terms = c("sweA1sc", "wetlandsc"))
+plot_model(M2, type = "pred", terms = c("tair3sc [all]", "season"))
+
+```
+
+Try dredging M2 and see if any interactions drop out. NOT RUN VERY TIME CONSUMING.
+
+```{r}
+# M2.dr <- dredge(M2, beta = "sd", fixed = "tair3sc")
+
+# subset(M2.dr, delta < 10)
+```
+
+Having problems with these really complex models. Remove the interactions with julian date. It's hard to understand what they really mean at this point with all the data in one model.
+
+```{r}
+
+M1 <- lme(mean ~ tair3sc + I(tair3sc^2) + jdsc + I(jdsc^2) + sweA1sc + prcp5sc + reach_slopesc +
+            wetlandsc + catchment_elev_mnsc + cont_areasc + season +
+            sweA1sc:wetlandsc + season:(tair3sc + I(tair3sc^2)),
+          random = ~ 1|HUC_name, data = temp.dm, na.action = "na.fail") 
+
+M2 <- lme(mean ~ tair3sc + I(tair3sc^2) + jdsc + I(jdsc^2) + sweA1sc + prcp5sc + reach_slopesc +
+            wetlandsc + catchment_elev_mnsc + cont_areasc + season +
+            sweA1sc:wetlandsc + season:(tair3sc + I(tair3sc^2)), 
+          random = ~ 1 + tair3sc|HUC_name, data = temp.dm, na.action = "na.fail") 
+
+data.frame(AIC = AIC(M1, M2),
+           rmse = c(rmse(temp.dm$mean, predict(M1)),
+           rmse(temp.dm$mean, predict(M2))))
+
+summary(M2)
+
+intervals(M2, which = "fixed")
+
+plot_model(M2, type = "pred", terms = c("sweA1sc [all]", "wetlandsc [-1.5, 2.5]"))
+plot_model(M2, type = "pred", terms = c("tair3sc [all]", "season"))
+plot_model(M2, type = "pred", terms = c("jdsc [all]"))
+plot_model(M2, type = "pred", terms = c("prcp5sc [all]"))
+plot_model(M2, type = "pred", terms = c("reach_slopesc [all]"))
+plot_model(M2, type = "pred", terms = c("catchment_elev_mnsc [all]"))
+plot_model(M2, type = "pred", terms = c("cont_areasc [all]"))
+
+plot_model(M1, type = "pred", terms = c("tair3sc [all]", "season"))
+```
+
+
+Check assumptions and deal with pattern in residuals. NOT RUN RESIDS LOOK FINE.
+
+```{r}
+plot(x = predict(M2), y = resid(M2))
+plot(x = temp.dm$tair3sc, y = resid(M2))
+plot(x = temp.dm$HUC_name, y = resid(M2))
+plot(x = temp.dm$jdsc, y = resid(M2))
+plot(x = temp.dm$sweA1sc, y = resid(M2))
+plot(x = temp.dm$prcp5sc, y = resid(M2))
+plot(x = temp.dm$cont_areasc, y = resid(M2))
+plot(x = temp.dm$reach_slopesc, y = resid(M2))
+plot(x = temp.dm$wetlandsc, y = resid(M2))
+plot(x = temp.dm$catchment_elev_mnsc, y = resid(M2))
+plot(x = as.factor(temp.dm$season), y = resid(M2))
+
+vf3 <- varFixed(value = ~tair3)
+M3 <- update(M2, weights = vf3)
+
+AIC(M2,M3)
+
+rmse(temp.dm$mean, predict(M3))
+
+plot(x = predict(M3), y = resid(M3, type = "normalized"))
+plot(x = temp.dm$tair3sc, y = resid(M3, type = "normalized"))
+plot(x = temp.dm$prcp5sc, y = resid(M3, type = "normalized"))
+
+hist(resid(M3))
+
+plot_model(M3, type = "diag")
+plot(M3)
+
+
+pdf("output/Deshka global model marginal effect.pdf")
+plot_model(M3, type = "pred", terms = c("sweA1sc [all]", "wetlandsc [-1.5, 2.5]"))
+plot_model(M3, type = "pred", terms = c("tair3sc [all]", "season"))
+plot_model(M3, type = "pred", terms = c("jdsc [all]"))
+plot_model(M3, type = "pred", terms = c("prcp5sc [all]"))
+plot_model(M3, type = "pred", terms = c("reach_slopesc [all]"))
+plot_model(M3, type = "pred", terms = c("catchment_elev_mnsc [all]"))
+plot_model(M3, type = "pred", terms = c("cont_areasc [all]"))
+dev.off()
+
+```
+
+Plot observed v. fitted by site to see if there are large bias for some sites.
+
+```{r}
+
+temp.dm %>% 
+  mutate(resid = residuals(M2, level = 1)) %>% 
+  group_by(Site) %>% 
+  summarize(resid_mn = mean(resid)) %>% 
+  arrange(desc(resid_mn))
+
+sites <- temp.dm %>% distinct(Site) %>% pull(Site)
+
+pdf("output/Anchor global model obs-fitted by site.pdf")
+for(i in sites){
+  dat <- temp.dm %>% 
+    filter(Site == i)
+  dat <- dat %>% 
+    mutate(fitted = predict(M2, newdata = dat))
+  rmse <- rmse(dat$mean, dat$fitted)
+  p <- dat %>% 
+    ggplot() +
+    geom_point(aes(x = fitted, y = mean, color = season)) +
+    geom_abline(aes(slope = 1, intercept = 0)) +
+    coord_fixed(xlim = c(0, 22), ylim = c(0, 20)) +
+    theme_bw() +
+    labs(title = i) +
+    geom_text(aes(x = 10, y = 20, label = round(rmse, 2)))
+  print(p)
+}
+dev.off()
+
+```
+
+Dredge and AIC.
+
+```{r}
+M2.sel <- stepAIC(update(M2, method = "ML"))
+summary(M2.sel)
+anova(M2.sel)
+
+M2.dr <- dredge(M3, beta = "sd", fixed = "tair3sc")
+
+subset(M3.dr, delta < 10)
+
+model.avg(M3.dr, subset = cumsum(weight) < 0.95)
+summary(get.models(M3.dr, 1)[[1]])
+
+```
+
+Do 10 runs of 10-fold CV on top model.
+
+```{r}
+summer_xval_gl <- data.frame()
+
+num_folds <- 10
+sites <- temp.dm %>% distinct(site_ID) %>% pull(site_ID)
+
+for(i in 1:10) {
+  folds <- createFolds(sites, k = num_folds, list = TRUE, returnTrain = TRUE)
+  folds[[11]] <- 1:79
+  names(folds)[11] <- "Fold11" 
+  for(j in 1:11) {
+    train_sites <- sites[folds[[j]]]
+    test_sites <- sites[-folds[[j]]]
+    train <- subset(temp.dm, site_ID %in% train_sites)
+    test <- subset(temp.dm, site_ID %in% test_sites)
+    fit <- update(M3, data = train)
+    new_row <- data.frame(run = i, xval_num = j, MAE = mean(abs(residuals(fit, level = 1))),
+                          RMSE = sqrt(mean(residuals(fit, level = 1)^2)))
+    summer_xval_gl <- bind_rows(summer_xval_gl, new_row)
+  }
+}
+
+summer_xval_gl %>% 
+  ggplot(aes(x = as.factor(run), y = xval_num)) +
+  geom_boxplot()
+
+summer_xval_gl %>%
+  group_by(run) %>% 
+  summarize(se_MAE = mean(MAE)/sqrt(11),
+            se_RMSE = mean(RMSE)/sqrt(11))
+  
+```
+
+
+Try dredging all summer models from global model, which was by far the best using AIC and dredge. 
+
+```{r}
+
+M3.models <- dredge(M3, evaluate = FALSE, beta = TRUE, fixed = c("tair3sc"))
+
+summer_xval_dredge <- data.frame()
+
+folds <- createFolds(sites, k = num_folds, list = TRUE, returnTrain = TRUE)
+folds[[11]] <- 1:79
+names(folds)[11] <- "Fold11" 
+
+
+for(i in 1:length(M3.models)) {
+  for(j in 1:11) {
+    train_sites <- sites[folds[[j]]]
+    test_sites <- sites[-folds[[j]]]
+    train <- subset(temp.dm, site_ID %in% train_sites)
+    test <- subset(temp.dm, site_ID %in% test_sites)
+    fit <- update(eval(M3.models[[i]]), data = train)
+    new_row <- data.frame(model_form = format(M3.models[[i]]), model_num = i, xval_num = j, MAE = mean(abs(residuals(fit, level = 1))),
+                          RMSE = sqrt(mean(residuals(fit, level = 1)^2)))
+    summer_xval_dredge <- bind_rows(summer_xval_dredge, new_row)
+  }
+}
+
+
+
+```
+
+
+BELOW NOT RUN - ONCE MODELS ARE COLLAPSED TO A SINGLE LINE, THE TOTAL ROWS IS 14568, NEED 1920*11 = 21120 TOTAL ROWS SO ONLY HALFWAY. RUN OVERNIGHT AFTER CHECKING WITH LESLIE ON GLOBAL MODEL AND FINAL SET OF INTERACTIONS.
+
+```{r}
+#note model calls got split across rows, merge them together
+summer_xval_dredge2 <- summer_xval_dredge %>% 
+  group_by(model_num, xval_num, MAE, RMSE) %>% 
+  summarize(model_form = paste(model_form, collapse = "")) %>% 
+  ungroup()
+
+spring_xval_dredge2 %>% 
+  ggplot() +
+  geom_boxplot(aes(y = MAE))
+
+#get rid of all white spaces for cleaning up function call
+
+spring_xval_dredge2 <- spring_xval_dredge2 %>% 
+  mutate(model_form = gsub(" ", "", model_form, fixed = TRUE))
+
+
+#remove first part of lme function call
+spring_xval_dredge2 <- spring_xval_dredge2 %>% 
+  mutate(covars = str_replace(model_form, "^lme.formula\\(fixed=mean~", ""))
+
+#remove last part of lme function call
+spring_xval_dredge2 <- spring_xval_dredge2 %>% 
+  mutate(covars = str_replace(covars, ",data=spring,random=\\~1\\|HUC12,na.action=\"na.fail\"\\)", ""))
+
+#add in number of parameters
+spring_xval_dredge2 <- spring_xval_dredge2 %>% 
+  mutate(parm_ct = sapply(strsplit(spring_xval_dredge2$covars, "\\+"), length))
+
+spring_xval_dredge2 
+
+spring_xval_summ <- spring_xval_dredge2 %>% 
+  group_by(model_num, covars, parm_ct) %>% 
+  summarize(mean_MAE = mean(MAE),
+            mean_RMSE = mean(RMSE)) %>% 
+  ungroup()
+
+spring_xval_summ %>% 
+  ggplot() +
+  geom_boxplot(aes(x = as.factor(parm_ct), y = mean_MAE))
+
+spring_xval_summ %>% 
+  ggplot() +
+  geom_boxplot(aes(x = as.factor(parm_ct), y = mean_RMSE))
+
+
+spring_xval_summ %>% 
+  select(parm_ct:mean_RMSE) %>% 
+  group_by(parm_ct) %>%
+  summarize_each(funs(mean, sd, se = sd(.)/sqrt(n())), mean_MAE:mean_RMSE) %>% 
+  ggplot() +
+  geom_point(aes(x = as.factor(parm_ct), y = mean_MAE_mean)) +
+  geom_linerange(aes(x = as.factor(parm_ct), ymin = mean_MAE_mean - mean_MAE_se, ymax = mean_MAE_mean + mean_MAE_se))
+
+spring_xval_summ %>% 
+  filter(parm_ct == 5, mean_MAE < 1.00) %>% 
+  arrange(desc(mean_RMSE))
+
+```
+
 

@@ -12,12 +12,12 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
 library(lubridate)
 library(rgdal)
-library(zoo)
-library(sf)
-library(corrplot)
-library(MuMIn)
-library(ape)
-library(readxl)
+# library(zoo)
+# library(sf)
+# library(corrplot)
+# library(MuMIn)
+# library(ape)
+# library(readxl)
 library(tidyverse)
 ```
 
@@ -45,6 +45,25 @@ temp <- temp %>%
   group_by(Site, sampleDate) %>% 
   summarize(meanT = mean(Temperature)) 
 ```
+
+Plot to look at differences between sites.
+
+```{r}
+
+temp %>% distinct(Site)
+
+temp %>% 
+  mutate(Year = year(sampleDate),
+         mo_day = format(sampleDate, format = "%m-%d")) %>% 
+  ggplot(aes(x = as.Date(mo_day, format = "%m-%d"), y = meanT, color = Site)) +
+  geom_line() +
+  facet_wrap(~Year) +
+  theme(legend.position = "none")
+
+```
+
+### NO LONGER INCLUDING 8-DAY AVERAGES BC USING DAYMET ONLY
+THIS SECTION NOT RUN 7/6/20.
 
 
 Use complete to fill in missing dates for all sites so that moving average is only calculating when the 8 days prior actually have data. (i.e. not going from October 2004 to April 2005).
@@ -109,8 +128,8 @@ Join RCA IDs to the stream temperature data frame. Remove the data for the KBR s
 
 ```{r}
 temp.rca <- rca_join %>% 
-  select(Site_join, rca_id) %>% 
-  right_join(temp_8day, by = c("Site_join" = "Site")) %>% 
+  dplyr::select(Site_join, rca_id) %>% 
+  right_join(temp, by = c("Site_join" = "Site")) %>% 
   rename(Site = Site_join)
   
 temp.rca %>% 
@@ -128,26 +147,26 @@ Read in covariates associated with the reaches and RCAs in the geodatabase. Note
 Everything should now be in two feature classes - one for rcas and one for reaches. The only data not quite there yet are the nlcd summaries so for now summarize from Dustin's table.
 
 ```{r}
-fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/Anchor.gdb"
+fgdb <- "W:/GIS/Anchor/Anchor_spatial.gdb"
 # List all feature classes in a file geodatabase
 subset(ogrDrivers(), grepl("GDB", name))
 fc_list <- ogrListLayers(fgdb)
 print(fc_list)
 # Read the feature class
-rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_06022020")
+rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_03112020")
 rcas <- sf::st_read(dsn = fgdb, layer = "anchor_rcas_attributed_06022020")
 ```
-
 Merge attributes for all to the new data frame. Use the flowacc value and convert to square kilometers. (The cont_area is the flow accumulation multiplied by 25 and converted from square meters to square kilometers.)
 
 ```{r}
 temp.rca <- temp.rca %>% 
-  left_join(rca_reach %>% select(reach_id, reach_slope, reach_length, Forest, Shrub, Wetland, Riparian), 
+  left_join(rca_reach %>% dplyr::select(reach_id, reach_slope, reach_length, Forest, Shrub, Wetland, Riparian), 
             by = c("rca_id" = "reach_id")) %>% 
-  select(-Shape)
+  dplyr::select(-Shape)
+
 temp.rca <- temp.rca %>% 
-  left_join(rcas %>% select(rca_id:ca_elev_mn)) %>% 
-  select(-Shape) %>% 
+  left_join(rcas %>% dplyr::select(rca_id:ca_elev_mn)) %>% 
+  dplyr::select(-Shape) %>% 
   mutate(cont_area = flowacc * 25 / 1000000)
 ```
 
@@ -171,7 +190,7 @@ NOTE: currently, the precip and swe are still 8-day averages, unchanged. Leslie 
 Feature classes in geodatabase with daymet data.
 
 ```{r}
-fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_DAYMET.gdb"
+fgdb <- "W:\\Leslie\\GIS\\KFHP\\Geodatabase\\anchor_DAYMET.gdb"
 # List all feature classes in a file geodatabase
 subset(ogrDrivers(), grepl("GDB", name))
 fc_list <- ogrListLayers(fgdb)
@@ -184,28 +203,30 @@ Read in the feature class with 3-day air temperatures.
 dm3day <- sf::st_read(dsn = fgdb, layer = "tair3_anchor_all")
 dm3day <- dm3day %>% 
   mutate(date = as.Date(date)) %>% 
-  select(-Field1)
+  dplyr::select(-Field1)
 ```
 
-Read in the feature class with 8-day air and 8-day swe. Don't worry about bringing in 8-day precipitation, going to move forward with summed 5-day precipitation. 
+
+(NOT RUN 7/7/20 BECAUSE MOVING FORWARD WITH 3-DAY AIR BASED ON COMPARISON RUN PREVIOUSLY.
+Read in the feature class with 8-day air and 8-day swe. Don't worry about bringing in 8-day precipitation, going to move forward with summed 5-day precipitation. )
 
 ```{r}
-daymet <- sf::st_read(dsn = fgdb, layer = "anchor_daymet")
-daymet <- daymet %>% 
-  mutate(date = as.Date(date)) %>% 
-  select(-Field1)
-daymet %>% 
-  group_by(year(date)) %>% 
-  summarize(min(date), max(date))
+# daymet <- sf::st_read(dsn = fgdb, layer = "anchor_daymet")
+# daymet <- daymet %>% 
+#   mutate(date = as.Date(date)) %>% 
+#   select(-Field1)
+# daymet %>% 
+#   group_by(year(date)) %>% 
+#   summarize(min(date), max(date))
 ```
 
-Read in 5-day summed precipitation. First day of 5-day window, need to add four days before merging.
+Read in 5-day summed precipitation. Middle day of 5-day window (leslie used zoo::rollapply with default settings with is align=center), need to add TWO days before merging so that 5-day sum is 4 days previous + day of stream temperature.
 
 ```{r}
 prcp5day <- sf::st_read(dsn = fgdb, layer = "prcp5day")
 prcp5day <- prcp5day %>% 
   mutate(date = as.Date(date)) %>% 
-  select(-Field1)
+  dplyr::select(-Field1)
 ```
 
 Merge the daymet data (i.e. air temp, swe, and precip covariates) to the stream temperature data frame so that only rca_ids and dates in the stream temperature data frame for which we have empirical data are kept. For now, remove daymet so it doesn't bog down the system (though we will need it later for prediction). 
@@ -216,34 +237,39 @@ Call this data frame temp.dm since it will be our model using the daymet air tem
 
 ```{r}
 dm3day <- dm3day %>% 
-  mutate(date_day3 = date + 1)
+  mutate(date_day3 = date + 1) %>% 
+  dplyr::select(-date)
+
 temp.dm <- temp.rca %>% 
-  left_join(dm3day %>% select(-date), 
-            by = c("rca_id" = "rca_id", "sampleDate" = "date_day3")) 
+  left_join(dm3day, by = c("rca_id" = "rca_id", "sampleDate" = "date_day3")) 
+
 # rm(dm3day)
 ```
 
+
+NOT RUN 7/6/20, NO LONGER USING 8DAY VARIABLES.
 Bring in the swe and 8-day air temperatures as well. Since now modeling daily stream temperatures, change the date so that it represents the last day of the 8-day period.
 
 From Leslie: "For the daymet data the date represents the mid-point of the 8-day series. For May 1st - average is 4 days prior and 3 days after." Email on 10/18/19.
 
 ```{r}
-daymet <- daymet %>% 
-  mutate(date_day8 = date + 3)
-temp.dm <- temp.dm %>% 
-  left_join(daymet %>% select(-date, -prcp), 
-            by = c("rca_id" = "rca_id", "sampleDate" = "date_day8")) 
+# daymet <- daymet %>% 
+#   mutate(date_day8 = date + 3)
+# temp.dm <- temp.dm %>% 
+#   left_join(daymet %>% select(-date, -prcp), 
+#             by = c("rca_id" = "rca_id", "sampleDate" = "date_day8")) 
 # rm(daymet)
 ```
 
-Bring in 5 day precipitation. Leslie says this is the first day of the 5 day window so need to add four days to match with daily mean temperatures.
+Bring in 5 day precipitation. 
 
 ```{r}
 prcp5day <- prcp5day %>% 
-  mutate(date_day5 = date + 4)
+  mutate(date_day5 = date + 2) %>% 
+  dplyr::select(-date)
+
 temp.dm <- temp.dm %>% 
-  left_join(prcp5day %>% select(-date), 
-            by = c("rca_id" = "rca_id", "sampleDate" = "date_day5")) 
+  left_join(prcp5day, by = c("rca_id" = "rca_id", "sampleDate" = "date_day5")) 
  
 ```
 
@@ -282,9 +308,11 @@ Leslie added a file to the data folder with this information.
 
 ```{r}
 sweA1 <- read_csv("Data/sweA1_anchor.csv")
+
 sweA1 <- sweA1 %>% 
   mutate(year = year(date)) %>% 
-  select(rca_id, sweA1, year)
+  dplyr::select(rca_id, sweA1, year)
+
 temp.dm <- temp.dm %>% 
   left_join(sweA1, by=c("rca_id", "year"))
 ```
@@ -292,30 +320,31 @@ temp.dm <- temp.dm %>%
 
 ## Merge LST data to data frame
 
+NOT DONE 7/6/20, NO LONGER USING LST.
 Read in LST data.
 
 ```{r}
-fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_LST.gdb"
-# List all feature classes in a file geodatabase
-subset(ogrDrivers(), grepl("GDB", name))
-fc_list <- ogrListLayers(fgdb)
-print(fc_list)
-# Read the feature class
-lst <- sf::st_read(dsn = fgdb, layer = "LST_anchor_all")
-lst <- lst %>% 
-  mutate(date = as.Date(date)) %>% 
-  select(-Field1)
+# fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_LST.gdb"
+# # List all feature classes in a file geodatabase
+# subset(ogrDrivers(), grepl("GDB", name))
+# fc_list <- ogrListLayers(fgdb)
+# print(fc_list)
+# # Read the feature class
+# lst <- sf::st_read(dsn = fgdb, layer = "LST_anchor_all")
+# lst <- lst %>% 
+#   mutate(date = as.Date(date)) %>% 
+#   select(-Field1)
 ```
 
 Merge LST to the model data frame with daymet and spatial covariates. Leslie and Timm clarified what the date represents for LST in an email on 10/18/19: "The date in the LST file name represents the first day of a consecutive 8 day period". Add a date to match the 8 day moving average of stream temperature before merging. This will be the last day in the 8-day window and so can now be used to model daily mean temperatures.
 
 ```{r}
-lst <- lst %>% 
-  mutate(date_day8 = date + 7,
-         lst = LST * 0.02 - 273.15)
-temp.dm <- temp.dm %>% 
-  left_join(lst %>% select(-date, -LST), 
-            by = c("rca_id" = "rca_id", "sampleDate" = "date_day8"))
+# lst <- lst %>% 
+#   mutate(date_day8 = date + 7,
+#          lst = LST * 0.02 - 273.15)
+# temp.dm <- temp.dm %>% 
+#   left_join(lst %>% select(-date, -LST), 
+#             by = c("rca_id" = "rca_id", "sampleDate" = "date_day8"))
 ```
 
 
@@ -325,6 +354,10 @@ temp.dm <- temp.dm %>%
 Remove temperatures less than 0 and calculate temperature index (waterT-airT)/waterT. index approaches 0 then air and stream temp are most similar.
  
 ```{r, echo=FALSE, warnings = FALSE}
+temp.dm %>% 
+  filter(meanT < 0) %>% 
+  distinct(Site, month, day, meanT)
+
 temp <- temp.dm %>% 
   filter(meanT > 0) %>% 
   mutate(index = (meanT - tair3)/meanT)
@@ -415,12 +448,18 @@ temp %>%
 
 ## Save data frame with empirical data, daymet, and lst.
 
-Check that everything is numeric and fix those that are not.
+Check that everything is numeric and fix those that are not. Add varaible for season so can run a full model with different slopes for ascending and descending limbs of temperature. season*tair3
 
 ```{r}
 str(temp)
+
 temp <- temp %>% 
-  mutate(Riparian = as.numeric(Riparian))
+  mutate(Riparian = as.numeric(Riparian),
+         season = case_when(day < 202 ~ "spring",
+                            day > 201 ~ "fall"))
+
+temp %>% distinct(season, day)
+
 save(temp, file = "output/temp.Rdata")
 ```
 
