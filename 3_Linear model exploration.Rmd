@@ -8,28 +8,29 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
 
-library(lubridate)
-library(rgdal)
+# library(lubridate)
+# library(rgdal)
 # library(zoo)
-library(sf)
-library(corrplot)
-library(MuMIn)
+# library(sf)
+# library(corrplot)
+# library(MuMIn)
 # library(ape)
-library(readxl)
+# library(readxl)
 # library(VIF)
 # library(jtools)
 library(nlme)
 library(car)
-library(corrplot)
-library(mgcv)
-library(visreg)
+# library(corrplot)
+# library(mgcv)
+# library(visreg)
 # library(GGally)
-library(Metrics)
-library(broom)
+# library(Metrics)
+# library(broom)
 library(tidyverse)
-library(ggeffects)
+# library(ggeffects)
 library(sjPlot)
-library(MASS)
+# library(MASS)
+library(effects)
 
 
 load(file = "output/temp.Rdata")
@@ -1222,7 +1223,7 @@ plot_model(S4.sel, type = "int")
 plot_model(S4.sel, type = "pred", terms = "prcp5")
 ```
 
-# Summer model
+# Summer model - START HERE 7/7/20
 
 All copied over from Deshka script.
 First add scaled covars to temp.
@@ -1231,91 +1232,104 @@ First add scaled covars to temp.
 
 temp.dm <- temp %>% 
   rename(jd = day, mean = meanT, catchment_elev_mn = rca_elev_mn) %>% 
-  mutate(season = as.factor(case_when(jd < 202 ~ "spring",
-                            jd > 201 ~ "fall")),
-         tair3sc = scale(tair3),
-         jdsc = scale(jd),
-         sweA1sc = scale(sweA1),
-         prcp5sc = scale(prcp5),
-         reach_slopesc = scale(reach_slope),
-         wetlandsc = scale(Wetland),
-         catchment_elev_mnsc = scale(catchment_elev_mn),
-         cont_areasc = scale(cont_area)) 
+  mutate(tair3sc = sjmisc::std(tair3),
+         jdsc = sjmisc::std(jd),
+         sweA1sc = sjmisc::std(sweA1),
+         prcp5sc = sjmisc::std(prcp5),
+         reach_slopesc = sjmisc::std(reach_slope),
+         wetlandsc = sjmisc::std(Wetland),
+         catchment_elev_mnsc = sjmisc::std(catchment_elev_mn),
+         cont_areasc = sjmisc::std(cont_area)) 
+
 ```
 
-Full model with all interactions.
+Quick check on VIF for full model that will be used below.
+
+```{r}
+lm1 <- lm(mean ~ tair3sc + I(tair3sc^2) + jdsc + I(jdsc^2) + sweA1sc + prcp5sc + reach_slopesc +
+            wetlandsc + catchment_elev_mnsc + cont_areasc + season,
+          data = temp.dm, na.action = "na.fail")
+
+vif(lm1)
+```
+Try a pairplot to see what is driving high vif for jd. Squared term for jd is correlated to raw air temps. And, probably need to drop either catchment elevation or stream_slope.
+
+```{r}
+temp.dm %>% 
+  mutate(tair3sc.2 = tair3sc^2,
+         jdsc.2 = jdsc^2) %>% 
+  dplyr::select(tair3sc, tair3sc.2, jdsc, jdsc.2, sweA1sc, prcp5sc, reach_slopesc, wetlandsc,
+         catchment_elev_mnsc, cont_areasc) %>% 
+  pairs(upper.panel = panel.cor, lower.panel = panel.smooth)
+```
+
+Plot of air versus stream temperature by season.
+
+```{r}
+temp.dm %>% 
+  ggplot(aes(x = tair3, y = mean, color = season)) +
+  # geom_point() +
+  geom_smooth() 
+  facet_wrap(~season)
+```
+
+
+
+
+Full model with all interactions. Dropped interactions with jd because models were too complex. Select best random term before using cross-validation on all model subsets for prediction.
+
 
 ```{r}
 
-M1 <- lme(mean ~ tair3sc + I(tair3sc^2) + jdsc + I(jdsc^2) + sweA1sc + prcp5sc + reach_slopesc +
+M1 <- lm(mean ~ tair3sc + I(tair3sc^2) + jdsc + I(jdsc^2) + sweA1sc + prcp5sc + reach_slopesc +
             wetlandsc + catchment_elev_mnsc + cont_areasc + season +
-            sweA1sc:(jdsc + I(jdsc^2)) + catchment_elev_mnsc:(jdsc + I(jdsc^2)) + 
-            sweA1sc:wetlandsc + wetlandsc:(jdsc + I(jdsc^2)) +
-            season:(tair3sc + I(tair3sc^2)),
-          random = ~ 1|HUC_name, data = temp.dm, na.action = "na.fail") 
+            sweA1sc:wetlandsc + season:(tair3sc + I(tair3sc^2)),
+          data = temp.dm, na.action = "na.fail") 
 
 M2 <- lme(mean ~ tair3sc + I(tair3sc^2) + jdsc + I(jdsc^2) + sweA1sc + prcp5sc + reach_slopesc +
-            wetlandsc + catchment_elev_mnsc + cont_areasc + season +
-            sweA1sc:(jdsc + I(jdsc^2)) + catchment_elev_mnsc:(jdsc + I(jdsc^2)) + 
-            sweA1sc:wetlandsc + wetlandsc:(jdsc + I(jdsc^2)) +
-            season:(tair3sc + I(tair3sc^2)), random = ~ 1 + tair3sc|HUC_name, data = temp.dm, na.action = "na.fail") 
-
-data.frame(AIC = AIC(M1, M2),
-           rmse = c(rmse(temp.dm$mean, predict(M1)),
-           rmse(temp.dm$mean, predict(M2))))
-
-summary(M2)
-
-intervals(M2)
-
-plot_model(M2, type = "pred", terms = c("jdsc [all]", "sweA1sc"))
-plot_model(M2, type = "pred", terms = c("jdsc [all]", "catchment_elev_mnsc"))
-plot_model(M2, type = "pred", terms = c("jdsc [all]", "wetlandsc"))
-plot_model(M2, type = "pred", terms = c("sweA1sc", "wetlandsc"))
-plot_model(M2, type = "pred", terms = c("tair3sc [all]", "season"))
-
-```
-
-Try dredging M2 and see if any interactions drop out. NOT RUN VERY TIME CONSUMING.
-
-```{r}
-# M2.dr <- dredge(M2, beta = "sd", fixed = "tair3sc")
-
-# subset(M2.dr, delta < 10)
-```
-
-Having problems with these really complex models. Remove the interactions with julian date. It's hard to understand what they really mean at this point with all the data in one model.
-
-```{r}
-
-M1 <- lme(mean ~ tair3sc + I(tair3sc^2) + jdsc + I(jdsc^2) + sweA1sc + prcp5sc + reach_slopesc +
             wetlandsc + catchment_elev_mnsc + cont_areasc + season +
             sweA1sc:wetlandsc + season:(tair3sc + I(tair3sc^2)),
           random = ~ 1|HUC_name, data = temp.dm, na.action = "na.fail") 
 
-M2 <- lme(mean ~ tair3sc + I(tair3sc^2) + jdsc + I(jdsc^2) + sweA1sc + prcp5sc + reach_slopesc +
+M3 <- lme(mean ~ tair3sc + I(tair3sc^2) + jdsc + I(jdsc^2) + sweA1sc + prcp5sc + reach_slopesc +
             wetlandsc + catchment_elev_mnsc + cont_areasc + season +
             sweA1sc:wetlandsc + season:(tair3sc + I(tair3sc^2)), 
           random = ~ 1 + tair3sc|HUC_name, data = temp.dm, na.action = "na.fail") 
 
-data.frame(AIC = AIC(M1, M2),
+data.frame(AIC = AIC(M1, M2, M3),
            rmse = c(rmse(temp.dm$mean, predict(M1)),
-           rmse(temp.dm$mean, predict(M2))))
+           rmse(temp.dm$mean, predict(M2)),
+           rmse(temp.dm$mean, predict(M3))))
 
 summary(M2)
 
 intervals(M2, which = "fixed")
 
-plot_model(M2, type = "pred", terms = c("sweA1sc [all]", "wetlandsc [-1.5, 2.5]"))
-plot_model(M2, type = "pred", terms = c("tair3sc [all]", "season"))
-plot_model(M2, type = "pred", terms = c("jdsc [all]"))
-plot_model(M2, type = "pred", terms = c("prcp5sc [all]"))
-plot_model(M2, type = "pred", terms = c("reach_slopesc [all]"))
-plot_model(M2, type = "pred", terms = c("catchment_elev_mnsc [all]"))
-plot_model(M2, type = "pred", terms = c("cont_areasc [all]"))
 
-plot_model(M1, type = "pred", terms = c("tair3sc [all]", "season"))
+#plot_model no long working
+plot_model(M2, type = "pred")
+plot_model(M2, type = "pred", terms = c("sweA1sc [all]", "wetlandsc [-1.5, 2.5]"))
+
+sjPlot::plot_model(M1, type = "int")
+
+
+
+
 ```
+
+Test for plot_model, which I can't get to run on complex models above.
+
+```{r}
+test <- lm(mean ~ tair3sc*season + I(tair3sc^2)*season,
+          data = temp.dm, na.action = "na.fail")
+summary(test)
+
+test <- lm(mean ~ scale(tair3),
+          data = temp.dm, na.action = "na.fail")
+
+plot_model(test, type = "int")
+```
+
 
 
 Check assumptions and deal with pattern in residuals. NOT RUN RESIDS LOOK FINE.
