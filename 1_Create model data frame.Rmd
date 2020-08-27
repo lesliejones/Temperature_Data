@@ -17,7 +17,7 @@ library(rgdal)
 # library(corrplot)
 # library(MuMIn)
 # library(ape)
-# library(readxl)
+library(readxl)
 library(tidyverse)
 ```
 
@@ -25,18 +25,16 @@ Merging all of the spatial and temporal covariates to the stream temperature dat
 
 # Anchor Data
 
-## 8-day moving average of stream temperature data
-
-Moving average function in CAtools which will remove NAs. We can now calculate a running mean independent of the number of data points available in each window (e.g. 8). Separately, calculate the number of non NA values in each window by replacing all non-NA values with 1 and filter on those running means with counts < 5.
+## Load and combined QAed datasets
 
 Load data files from previously that only have useData == 1. 
-Bind all the of data together first before calculating running means. Calculate mean daily temperatures.
+Bind all the of data together and calculate mean daily temperatures.
 
 ```{r}
 load("output/CIKdat_postQA.Rdata")
 load("output/APUdat_postQA.Rdata")
 load("output/KBRdat_postQA.Rdata")
-temp <- as_tibble()
+temp <- tibble()
 temp <- bind_rows(temp, CIKdatFinal) 
 temp <- bind_rows(temp, KBRdatFinal) 
 temp <- bind_rows(temp, APUdatFinal) 
@@ -50,7 +48,13 @@ Plot to look at differences between sites.
 
 ```{r}
 
-temp %>% distinct(Site)
+temp %>% 
+  distinct(Site, year(sampleDate)) 
+
+temp %>% 
+  distinct(Site, year(sampleDate)) %>% 
+  count(Site) %>% 
+  arrange(n)
 
 temp %>% 
   mutate(Year = year(sampleDate),
@@ -62,48 +66,30 @@ temp %>%
 
 ```
 
-### NO LONGER INCLUDING 8-DAY AVERAGES BC USING DAYMET ONLY
-THIS SECTION NOT RUN 7/6/20.
 
-
-Use complete to fill in missing dates for all sites so that moving average is only calculating when the 8 days prior actually have data. (i.e. not going from October 2004 to April 2005).
-
-Calculate a moving average that takes the 7 days prior and day itself and calculates a mean and removes any missing values (NAs). Add a new field that is 0 when mean temp is NA and 1 when we have a measurement. Do a rolling sum on that field over the same window so we know how many measurements were used in the rolling mean. Only keep moving averages that were calculated from 5 or more measurements! DONE!
+Make a pdf of temperatures by site with different years to double check we don't have any major gw sites.
 
 ```{r}
-all.dates <- tibble(sampleDate = seq.Date(from = min(temp$sampleDate), 
-                                          to = max(temp$sampleDate), by = 1)) 
-temp_8day <- temp %>%
-  complete(Site, all.dates) %>% 
-  arrange(Site, sampleDate) %>% 
-  #add a field that can be used to count non-NA values
-  mutate(meanNotNA = case_when(is.na(meanT) ~ 0,
-                               TRUE ~ 1)) %>% 
-  group_by(Site) %>% 
-  mutate(ma_mean = rollapply(meanT, width = 8, align = "right", 
-                             FUN = function(x) mean(x, na.rm = TRUE), fill = NA),
-         ma_sum = rollapply(meanNotNA, width = 8, align = "right", 
-                            FUN = sum, fill = NA)) %>% 
-  filter(!ma_sum < 5)
+sites <- temp %>% distinct(Site) %>% pull(Site)
+
+pdf("output/Daily temps by year and site_qaed.pdf")
+for(i in sites){
+  dat <- temp %>% filter(Site == i)
+  dat <- dat %>% 
+    mutate(day = format(sampleDate, "%m-%d"),
+           year = factor(year(sampleDate)))
+  p <- ggplot(data = dat, aes(x = as.Date(day, format = "%m-%d"), y = meanT, color = year)) +
+    # geom_point() +
+    geom_line() +
+    labs(title = i, x = "Date", y = "Mean Daily Temp.")
+  print(p)
+}
+dev.off()
+
 ```
 
-Are there missing data in temp_8day? Only for meanT, ma_mean is all filled in. When we are filling in dates and accepting moving averages with 5 or more measurements, we are extending the data series out by three days beyond the last measurement. We can delete these or accept them. For now, leave them in.
 
-```{r}
-summary(temp_8day)
-temp_8day %>% filter(is.na(meanT))
-```
 
-Plot of mean temps and moving average.
-
-```{r}
-temp_8day %>% 
-  filter(Site == "CIK8") %>% 
-  ggplot() +
-  geom_line(aes(x = sampleDate, y = meanT)) +
-  geom_line(aes(x = sampleDate-4, y = ma_mean), color = "red") +
-  facet_wrap(~Site)
-```
 
 
 ## Merge RCA ids to stream temperature data frame
@@ -135,8 +121,135 @@ temp.rca <- rca_join %>%
 temp.rca %>% 
   distinct(Site, rca_id) %>% 
   arrange(rca_id)
+
 temp.rca <- temp.rca %>% 
-  filter(!rca_id == 0)
+  filter(!rca_id == 0) %>% 
+  mutate(year = year(sampleDate))
+```
+
+## Remove duplicate sites and years within an RCA
+
+Check for duplicate sites and years within an rca.
+
+* 248 
+* 933
+* 255
+* 351
+* 928
+
+```{r}
+temp.rca %>% 
+  mutate(year = year(sampleDate)) %>% 
+  distinct(rca_id, Site, year) %>% 
+  count(rca_id, year) %>% 
+  arrange(desc(n))
+```
+
+RCA 248 has nanc-44 upper middle and lower in the same rca. Keep the lower site as long as it isn't missing data.
+
+```{r}
+temp.rca %>% 
+  mutate(year = year(sampleDate)) %>% 
+  distinct(rca_id, Site, year) %>% 
+  filter(rca_id == 248, year %in% c(2007, 2008))
+
+temp.rca %>% 
+  mutate(year = year(sampleDate)) %>% 
+  filter(rca_id == 248) %>% 
+  count(Site, year)
+```
+
+Rca 933 had three sites with data from 2015 - drop apu1 and apu10. Sue's site has much more data for that year.
+
+```{r}
+temp.rca %>% 
+  mutate(year = year(sampleDate)) %>% 
+  distinct(rca_id, Site, year) %>% 
+  filter(rca_id == 933, year %in% c(2015))
+
+temp.rca %>% 
+  mutate(year = year(sampleDate)) %>% 
+  filter(rca_id == 933, year == 2015) %>% 
+  count(Site, year)
+```
+
+Rca 255 has star-69 lower and middle. Keep lower, same amount of data and more representative of watershed.
+
+```{r}
+temp.rca %>% 
+  mutate(year = year(sampleDate)) %>% 
+  distinct(rca_id, Site, year) %>% 
+  filter(rca_id == 255, year %in% c(2007, 2008))
+
+temp.rca %>% 
+  mutate(year = year(sampleDate)) %>% 
+  filter(rca_id == 255) %>% 
+  count(Site, year)
+```
+
+Rca 351 - star 171 lower and upper both have data for 2012/2013. Keep upper more representative.
+
+```{r}
+temp.rca %>% 
+  mutate(year = year(sampleDate)) %>% 
+  distinct(rca_id, Site, year) %>% 
+  filter(rca_id == 351, year %in% c(2012, 2013))
+
+temp.rca %>% 
+  mutate(year = year(sampleDate)) %>% 
+  filter(rca_id == 351) %>% 
+  count(Site, year)
+```
+
+Rca 928 - sanc 1203 middle and upper. Keep middle both have same amount of data.
+
+```{r}
+temp.rca %>% 
+  mutate(year = year(sampleDate)) %>% 
+  distinct(rca_id, Site, year) %>% 
+  filter(rca_id == 928)
+
+temp.rca %>% 
+  mutate(year = year(sampleDate)) %>% 
+  filter(rca_id == 928) %>% 
+  count(Site, year)
+```
+
+
+Sites and years to drop because they are duplicates within an RCA:
+
+* NANC-44-M 
+* NANC-44-U
+* APU10 in 2015
+* APU1 in 2015
+* STAR-69-M
+* STAR 171 Lower
+* SANC-1203-U
+
+```{r}
+temp.rca %>% distinct(Site)
+
+temp.rca <- temp.rca %>% 
+  filter(!Site %in% c("NANC-44-M", "NANC-44-U", "STAR-69-M", "STAR 171 Lower", "SANC-1203-U")) 
+
+temp.rca <- temp.rca %>% 
+  filter(!(Site %in% c("APU10", "APU1") & year == 2015)) 
+```
+
+For the remaining sites look at mean july temps by year to see if some of the little streams are really gw sites.
+
+```{r}
+temp.rca %>% 
+  filter(month(sampleDate) == 7) %>% 
+  group_by(Site, year) %>% 
+  summarize(july = mean(meanT)) %>% 
+  arrange(july)
+```
+
+Summary of final dataset.
+
+```{r}
+temp.rca %>% distinct(Site, year) %>% count(Site) %>% arrange(n)
 ```
 
 
@@ -156,18 +269,71 @@ print(fc_list)
 rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_03112020")
 rcas <- sf::st_read(dsn = fgdb, layer = "anchor_rcas_attributed_06022020")
 ```
+
+Summary of stream reach and rca attributes for report.
+
+```{r}
+rca_reach %>% 
+  as.data.frame %>% 
+  ggplot() +
+  geom_histogram(aes(x = reach_slope))
+
+rca_reach %>% 
+  as.data.frame %>% 
+  summary()
+
+rca_reach %>% 
+  as.data.frame %>% 
+  pull(reach_slope) %>% 
+  quantile(probs = c(0.05, 0.95))
+
+rca_reach %>% 
+  as.data.frame %>% 
+  select(reach_length) %>% 
+  mutate(rl_sort = sort(reach_length),
+         rl_sum = cumsum(rl_sort)) %>% 
+  slice(606)
+
+rcas %>% 
+  as.data.frame %>% 
+  summary()
+
+#total chinook habitat
+rcas %>%
+  as.data.frame() %>% 
+  right_join(rca_reach %>% as.data.frame, by = c("rca_id" = "reach_id")) %>% 
+  filter(K_r > 0|K_s > 0|K_p > 0) %>% 
+  summarize(sum(reach_length)/1000)
+
+rcas %>%
+  as.data.frame() %>% 
+  right_join(rca_reach %>% as.data.frame, by = c("rca_id" = "reach_id")) %>% 
+  filter(CO_r > 0|CO_s > 0|CO_p > 0) %>% 
+  summarize(sum(reach_length)/1000)
+```
+
+
+
 Merge attributes for all to the new data frame. Use the flowacc value and convert to square kilometers. (The cont_area is the flow accumulation multiplied by 25 and converted from square meters to square kilometers.)
 
 ```{r}
-temp.rca <- temp.rca %>% 
-  left_join(rca_reach %>% dplyr::select(reach_id, reach_slope, reach_length, Forest, Shrub, Wetland, Riparian), 
-            by = c("rca_id" = "reach_id")) %>% 
-  dplyr::select(-Shape)
+
+reach_dat <- rca_reach %>% 
+  as.data.frame() %>% 
+  dplyr::select(reach_id, reach_slope, reach_length, Forest, Shrub, Wetland, Riparian) 
 
 temp.rca <- temp.rca %>% 
-  left_join(rcas %>% dplyr::select(rca_id:ca_elev_mn)) %>% 
-  dplyr::select(-Shape) %>% 
+  left_join(reach_dat, by = c("rca_id" = "reach_id"))
+
+
+rca_dat <- rcas %>% 
+  as.data.frame() %>% 
+  dplyr::select(rca_id:ca_elev_mn) %>% 
   mutate(cont_area = flowacc * 25 / 1000000)
+
+temp.rca <- temp.rca %>% 
+  left_join(rca_dat)
+
 ```
 
 Create a new elevation covariate that matches what was used by Siegel and Volk - the difference between the mean elevation for the contributing area and the mean elevation for the rca (they used the site elevation, but it should be very comparable). 
@@ -179,11 +345,7 @@ temp.rca <- temp.rca %>%
 
 ## Merge daymet data to stream temperature data frame
 
-Read in climate covariates stored in file geodatabases that were calculated for the RCAs. These are tables that have climate information linked to the RCAs.
-
-Start with the daymet data: air, precipitation, and SWE. We are now moving forward with 3-day averaged air temperatures. The daymet date represents the middle day.
-
-NOTE: currently, the precip and swe are still 8-day averages, unchanged. Leslie is planning to sum 5-day precipitation by RCA and add that in later.
+Read in climate covariates stored in file geodatabases that were calculated for the RCAs. These are tables that have climate information linked to the RCAs. Start with the daymet data: air, precipitation, and SWE. We are now moving forward with 3-day averaged air temperatures. The daymet date represents the middle day.
 
 (Previously, we were using 8-day averages to match the LST, but because daymet had a much stronger correlation with stream temperature, we are now just focussed on that dataset. In Siegel and Volk, they justified 3 day and 5 day lagged air temperatures so we are trying that out to match. Longer lags would be better for bigger systems.)
 
@@ -206,21 +368,7 @@ dm3day <- dm3day %>%
   dplyr::select(-Field1)
 ```
 
-
-(NOT RUN 7/7/20 BECAUSE MOVING FORWARD WITH 3-DAY AIR BASED ON COMPARISON RUN PREVIOUSLY.
-Read in the feature class with 8-day air and 8-day swe. Don't worry about bringing in 8-day precipitation, going to move forward with summed 5-day precipitation. )
-
-```{r}
-# daymet <- sf::st_read(dsn = fgdb, layer = "anchor_daymet")
-# daymet <- daymet %>% 
-#   mutate(date = as.Date(date)) %>% 
-#   select(-Field1)
-# daymet %>% 
-#   group_by(year(date)) %>% 
-#   summarize(min(date), max(date))
-```
-
-Read in 5-day summed precipitation. Middle day of 5-day window (leslie used zoo::rollapply with default settings with is align=center), need to add TWO days before merging so that 5-day sum is 4 days previous + day of stream temperature.
+Read in 5-day summed precipitation. Middle day of 5-day window (leslie used zoo::rollapply with default settings which is align=center), need to add TWO days before merging so that 5-day sum is 4 days previous + day of stream temperature.
 
 ```{r}
 prcp5day <- sf::st_read(dsn = fgdb, layer = "prcp5day")
@@ -247,19 +395,7 @@ temp.dm <- temp.rca %>%
 ```
 
 
-NOT RUN 7/6/20, NO LONGER USING 8DAY VARIABLES.
-Bring in the swe and 8-day air temperatures as well. Since now modeling daily stream temperatures, change the date so that it represents the last day of the 8-day period.
 
-From Leslie: "For the daymet data the date represents the mid-point of the 8-day series. For May 1st - average is 4 days prior and 3 days after." Email on 10/18/19.
-
-```{r}
-# daymet <- daymet %>% 
-#   mutate(date_day8 = date + 3)
-# temp.dm <- temp.dm %>% 
-#   left_join(daymet %>% select(-date, -prcp), 
-#             by = c("rca_id" = "rca_id", "sampleDate" = "date_day8")) 
-# rm(daymet)
-```
 
 Bring in 5 day precipitation. 
 
@@ -302,6 +438,8 @@ temp.dm <- temp.dm %>%
 ```
 
 
+
+
 ## Merge April 1st swe from Daymet
 
 Leslie added a file to the data folder with this information.
@@ -318,36 +456,6 @@ temp.dm <- temp.dm %>%
 ```
 
 
-## Merge LST data to data frame
-
-NOT DONE 7/6/20, NO LONGER USING LST.
-Read in LST data.
-
-```{r}
-# fgdb <- "Data/Spatial_data/Anchor/KFHP/Geodatabases/anchor_LST.gdb"
-# # List all feature classes in a file geodatabase
-# subset(ogrDrivers(), grepl("GDB", name))
-# fc_list <- ogrListLayers(fgdb)
-# print(fc_list)
-# # Read the feature class
-# lst <- sf::st_read(dsn = fgdb, layer = "LST_anchor_all")
-# lst <- lst %>% 
-#   mutate(date = as.Date(date)) %>% 
-#   select(-Field1)
-```
-
-Merge LST to the model data frame with daymet and spatial covariates. Leslie and Timm clarified what the date represents for LST in an email on 10/18/19: "The date in the LST file name represents the first day of a consecutive 8 day period". Add a date to match the 8 day moving average of stream temperature before merging. This will be the last day in the 8-day window and so can now be used to model daily mean temperatures.
-
-```{r}
-# lst <- lst %>% 
-#   mutate(date_day8 = date + 7,
-#          lst = LST * 0.02 - 273.15)
-# temp.dm <- temp.dm %>% 
-#   left_join(lst %>% select(-date, -LST), 
-#             by = c("rca_id" = "rca_id", "sampleDate" = "date_day8"))
-```
-
-
 
 ## Temperature Index 
 
@@ -358,46 +466,43 @@ temp.dm %>%
   filter(meanT < 0) %>% 
   distinct(Site, month, day, meanT)
 
-temp <- temp.dm %>% 
+temp.dm <- temp.dm %>% 
   filter(meanT > 0) %>% 
   mutate(index = (meanT - tair3)/meanT)
 ```
 
-Explore temperature index by sites and month.
+Explore temperature index by sites and year. All bad values are early. 
 
 ``` {r, echo=FALSE, warnings = FALSE}
-ggplot() + geom_point (data=temp, aes(x = day, y = index, color=year)) +
-     facet_wrap(~Site, scales="free_y") 
-month5b <- filter(temp,month==5) 
-ggplot() + geom_point (data=month5b, aes(x = day, y = index, color=year)) +
-     facet_wrap(~Site, scale="free_y") 
-month6b <- filter(temp,month==6) 
-ggplot() + geom_point (data=month6b, aes(x = day, y = index, color=year)) +
-     facet_wrap(~Site, scales="free_y") 
-month7b <- filter(temp,month==7) 
-ggplot() + geom_point (data=month7b, aes(x = day, y = index, color=year)) +
-     facet_wrap(~Site, scales="free_y") 
-month8b <- filter(temp,month==8) 
-ggplot() + geom_point (data=month8b, aes(x = day, y = index, color=year)) +
-     facet_wrap(~Site, scales="free_y") 
-month9b <- filter(temp,month==9) 
-ggplot() + geom_point (data=month9b, aes(x = day, y = index, color=year)) +
-     facet_wrap(~Site, scales="free_y") 
+
+ggplot(data=temp.dm, aes(x = day, y = index, color=factor(year))) + 
+  geom_point () +
+  facet_wrap(~Site) 
+
 ```
+
+Save this version of the data frame for showing the temp index values in May for the report.
+
+```{r}
+temp.dm.may <- temp.dm
+
+save(temp.dm.may, file = "output/temp.dm.may.Rdata")
+```
+
 Remove all data prior to June 1 (Julian Day 152) and replot index
 
 ```{r, warnings = FALSE, echo=FALSE}
-temp <- temp %>% 
+temp.dm <- temp.dm %>% 
   filter(day > 152) 
 ```
 
 
-
 ```{r, warnings = FALSE, echo=FALSE}
-ggplot() + geom_point (data=temp, aes(x = day, y = index, color=year)) +
-     facet_wrap(~Site)
-```
+ggplot(data=temp.dm, aes(x = day, y = index, color=factor(year))) + 
+  geom_point () +
+  facet_wrap(~Site) 
 
+```
 
 ## Seasonal split on maximum temperatures
 
@@ -448,20 +553,145 @@ temp %>%
 
 ## Save data frame with empirical data, daymet, and lst.
 
-Check that everything is numeric and fix those that are not. Add varaible for season so can run a full model with different slopes for ascending and descending limbs of temperature. season*tair3
+Check that everything is numeric and fix those that are not. Add variable for season so can run a full model with different slopes for ascending and descending limbs of temperature. season*tair3
 
 ```{r}
-str(temp)
+str(temp.dm)
 
-temp <- temp %>% 
+temp.dm <- temp.dm %>% 
   mutate(Riparian = as.numeric(Riparian),
          season = case_when(day < 202 ~ "spring",
                             day > 201 ~ "fall"))
 
-temp %>% distinct(season, day)
+temp.dm %>% distinct(season, day)
 
-save(temp, file = "output/temp.Rdata")
+save(temp.dm, file = "output/temp.dm.Rdata")
 ```
+
+## Create larger data frame with 8-day daymet and lst
+
+### 8-day moving average of stream temperature data: NOT RUN BC USING DAYMET ONLY NOW.
+
+Moving average function in CAtools which will remove NAs. We can now calculate a running mean independent of the number of data points available in each window (e.g. 8). Separately, calculate the number of non NA values in each window by replacing all non-NA values with 1 and filter on those running means with counts < 5.
+
+Use complete to fill in missing dates for all sites so that moving average is only calculating when the 8 days prior actually have data. (i.e. not going from October 2004 to April 2005).
+
+Calculate a moving average that takes the 7 days prior and day itself and calculates a mean and removes any missing values (NAs). Add a new field that is 0 when mean temp is NA and 1 when we have a measurement. Do a rolling sum on that field over the same window so we know how many measurements were used in the rolling mean. Only keep moving averages that were calculated from 5 or more measurements! DONE!
+
+```{r}
+all.dates <- tibble(sampleDate = seq.Date(from = min(temp.dm$sampleDate), 
+                                          to = max(temp.dm$sampleDate), by = 1)) 
+
+temp_8day <- temp.dm %>%
+  complete(Site, all.dates) %>% 
+  arrange(Site, sampleDate) %>% 
+  #add a field that can be used to count non-NA values
+  mutate(meanNotNA = case_when(is.na(meanT) ~ 0,
+                               TRUE ~ 1)) %>% 
+  group_by(Site) %>% 
+  mutate(ma_mean = rollapply(meanT, width = 8, align = "right", 
+                             FUN = function(x) mean(x, na.rm = TRUE), fill = NA),
+         ma_sum = rollapply(meanNotNA, width = 8, align = "right", 
+                            FUN = sum, fill = NA)) %>% 
+  filter(!ma_sum < 5)
+
+```
+
+Are there missing data in temp_8day? Only for meanT, ma_mean is all filled in. When we are filling in dates and accepting moving averages with 5 or more measurements, we are extending the data series out by three days beyond the last measurement. We can delete these or accept them. For now, leave them in.
+
+```{r}
+summary(temp_8day)
+temp_8day %>% filter(is.na(meanT))
+```
+
+Plot of mean temps and moving average.
+
+```{r}
+temp_8day %>% 
+  filter(Site == "CIK8") %>% 
+  ggplot() +
+  geom_line(aes(x = sampleDate, y = meanT)) +
+  geom_line(aes(x = sampleDate-4, y = ma_mean), color = "red") +
+  facet_wrap(~Site)
+```
+
+Merge the 8 day moving averages back to the temp.dm data.frame. BUT rename. This is a more complete data frame for justifying NOT using lst or 8-day averages in next script of data and model exploration.
+
+```{r}
+temp.dm2 <- left_join(temp.dm, temp_8day %>% select(Site, sampleDate, ma_mean))
+
+```
+
+Read in the date with 8-day air. Just focus on air for model comparison. There was also originally and 8-day precip and 8-day swe. For precip, I'm not sure if that was a sum or an average. And for swe, we decided an annual index of snowpack was better.
+
+```{r}
+fgdb <- "W:\\Leslie\\GIS\\KFHP\\Geodatabase\\anchor_DAYMET.gdb"
+# List all feature classes in a file geodatabase
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+```
+
+
+```{r}
+dm8day <- sf::st_read(dsn = fgdb, layer = "tair_anchor_all")
+dm8day <- dm8day %>%
+  mutate(date = as.Date(date)) %>%
+  select(-Field1)
+```
+
+Since now modeling daily stream temperatures, change the date so that it represents the last day of the 8-day period.
+
+From Leslie: "For the daymet data the date represents the mid-point of the 8-day series. For May 1st - average is 4 days prior and 3 days after." Email on 10/18/19.
+
+```{r}
+dm8day <- dm8day %>%
+  mutate(date_day8 = date + 3)
+temp.dm2 <- temp.dm2 %>%
+  left_join(dm8day %>% select(-date),
+            by = c("rca_id" = "rca_id", "sampleDate" = "date_day8"))
+
+```
+
+## Merge LST data to data frame
+
+Read in LST data.
+
+```{r}
+fgdb <- "W:/Leslie/GIS/KFHP/Geodatabase/anchor_LST.gdb"
+
+# List all feature classes in a file geodatabase
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+
+# Read the feature class
+lst <- sf::st_read(dsn = fgdb, layer = "LST_anchor_all")
+lst <- lst %>%
+  mutate(date = as.Date(date)) %>%
+  select(-Field1)
+```
+
+Merge LST to the model data frame with daymet and spatial covariates. Leslie and Timm clarified what the date represents for LST in an email on 10/18/19: "The date in the LST file name represents the first day of a consecutive 8 day period". Add a date to match the 8 day moving average of stream temperature before merging. This will be the last day in the 8-day window and so can now be used to model daily mean temperatures.
+
+```{r}
+lst <- lst %>%
+  mutate(date_day8 = date + 7,
+         lst = LST * 0.02 - 273.15)
+temp.dm2 <- temp.dm2 %>%
+  left_join(lst %>% select(-date, -LST),
+            by = c("rca_id" = "rca_id", "sampleDate" = "date_day8"))
+
+```
+
+Save this data frame for comparing different air temperature covariates in next markdown: 8day daymet versus 8 day lst, 8-day daymet vs. 3-day daymet.
+
+```{r}
+save(temp.dm2, file = "output/temp.dm2.Rdata")
+```
+
+
+
 
 ## STOPPED HERE NOTHING BELOW HAS BEEN RUN 2/5/20
 

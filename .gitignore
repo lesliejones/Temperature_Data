@@ -6,3 +6,5 @@ Spatial_data
 future
 .pdf
 output/For Sue
+output/new_data.Rdata
+output/preds.Rdata

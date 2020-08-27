@@ -1,0 +1,861 @@
+---
+title: "4_Predictions"
+author: "Becky Shaftel"
+date: "6/3/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(sf)
+library(tidyverse)
+library(rgdal)
+library(lubridate)
+library(gridExtra)
+```
+
+
+Rabideaux creek is not in the predictions data frames because Leslie had clipped it when she processed climate data. Left join on climate data by grid code makes sure it was removed from the spatial covariates before creating new_data_all, which was used for historic and future predictions.
+
+
+# Build data frame 
+
+## Spatial covariates
+
+Read in spatial covariates associated with each catchment. These are stored in two separate feature classes.
+
+```{r}
+
+fgdb <- "W:/GIS/Deshka/Deshka_spatial.gdb"
+
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+
+fl <- st_read(dsn = fgdb, layer = "Deshka_NHDFlowline_attributed_05032020")
+fl <- st_zm(fl)
+fl <- fl %>% st_transform(4326)
+
+cat <- st_read(dsn = fgdb, layer = "Deshka_NHDPlusCatchment_wgridcode")
+cat <- st_zm(cat)
+cat<- cat %>% st_transform(4326)
+
+```
+
+Merge attributes for all to the new data frame. Use the flowacc value and convert to square kilometers. (The cont_area is the flow accumulation multiplied by 25 and converted from square meters to square kilometers.)
+
+```{r}
+
+new_data_sp <- fl %>% 
+  st_set_geometry(NULL) %>% 
+  dplyr::select(nhdID = NHDPlusID, reach_slope, Forest, Shrub, Wetland, Riparian, LengthKM) 
+
+new_data_sp <- cat %>% 
+  st_set_geometry(NULL) %>% 
+  dplyr::select(nhdID = NHDPlusID, catchment_elev_mn, HUC_name, HUC12, K_r:ca_elev_mn, GridCode) %>% 
+  right_join(new_data_sp)
+  
+```
+
+Create a new elevation covariate that matches what was used by Siegel and Volk - the difference between the mean elevation for the contributing area and the mean elevation for the rca (they used the site elevation, but it should be very comparable). Also convert flowacc to total watershed area.
+
+```{r}
+new_data_sp <- new_data_sp %>% 
+  mutate(elev_delta = ca_elev_mn - catchment_elev_mn,
+         cont_area = flowacc * 25 / 1000000)
+```
+
+Save species and life stage preferences by catchment for merging with mets and making figures. Also get the flow-line length for each catchment so can sum total habitat.
+
+```{r}
+cat_spp <- cat %>% 
+  st_set_geometry(NULL) %>% 
+  dplyr::select(nhdID = NHDPlusID, HUC_name, K_r:Pk_p) %>%
+  mutate(nhdID_short = substr(nhdID, 10, 14))
+
+fl_length <- fl %>% 
+  st_set_geometry(NULL) %>% 
+  dplyr::select(nhdID = NHDPlusID, LengthKM) %>%
+  mutate(nhdID_short = substr(nhdID, 10, 14))
+
+cat_spp <- left_join(cat_spp, fl_length)
+
+cat_spp %>% dim
+cat_spp
+
+save(cat_spp, file = "output/cat_spp.Rdata")
+  
+```
+
+
+## Add Daymet data 
+
+Read in daymet data. Get 3-day air temperature and 5-day precip. 
+
+Read in the file with data from 1980 - 2019.
+
+```{r}
+tair <- read_csv("W:/Github/KFHP-Analysis/Data/deshka/tair3/tair3day_80-19.csv")
+```
+
+Note: Daymet is middle of 3-day window. We want daymet to represent day of and two days prior for modeling daily stream temperatures.
+
+```{r}
+tair <- tair %>% 
+  mutate(date_day3 = date + 1)
+```
+
+Data frame with air temps for merging to spatial data.
+
+```{r}
+new_data_cl <- tair %>% dplyr::select(-date) 
+
+new_data_cl <- new_data_cl %>% 
+  dplyr::rename(date = date_day3)
+
+```
+
+
+Merge climate and spatial data frames. Join on the climate data so that spatial covariates are repeated across all dates.
+
+```{r}
+new_data_all <- left_join(new_data_cl, new_data_sp)
+```
+
+Add julian date so that the model predicts only within the range of dates that were used to build the models.
+
+```{r}
+new_data_all <- new_data_all %>% 
+  mutate(jd = as.numeric(format(date, "%j"))) %>% 
+  filter(jd > 147)
+```
+
+## Add in sites.
+
+Add in site ids so can make predictions at innermost grouping for sites with empirical data. This will improve temporal predictions for the  sites with fish data.
+
+```{r}
+
+new_data_all <- left_join(new_data_all, rca_join %>% dplyr::select(site_ID, nhdID = NHDPlusID_1)) 
+
+```
+
+
+
+### SKIP PRECIP AND SWE - NOT NEEDED FOR PREDICTION.
+Read in the precipitation file with data from 1980 - 2019.
+
+```{r}
+prcp <- read_csv("W:/Github/KFHP-Analysis/Data/deshka/prcp5/prcp5day_80-19.csv")
+```
+
+Note: Daymet is middle of 5-day window. We want daymet to represent day of and four days prior for modeling daily stream temperatures.
+
+```{r}
+prcp <- prcp %>% 
+  mutate(date_day5 = date + 2)
+```
+
+Merge air temp and precip data. Should join on both gridcode and date, with values for both parameters.
+
+```{r}
+new_data_cl <- left_join(tair %>% dplyr::select(-date), prcp %>% dplyr::select(-date), by = c("GridCode" = "GridCode", "date_day3" = "date_day5"))
+
+new_data_cl <- new_data_cl %>% 
+  filter(!is.na(prcp5))
+
+new_data_cl <- new_data_cl %>% 
+  dplyr::rename(date = date_day3)
+
+```
+
+SWE by year.
+
+```{r}
+swe <- read_csv("W:/Github/KFHP-Analysis/Data/deshka/sweA1/sweA1_deshka_80-19.csv")
+```
+
+Add year for merging.
+
+```{r}
+swe <- swe %>% 
+  mutate(year = year(date)) %>% 
+  select(-date)
+
+new_data_cl <- new_data_cl %>% 
+  mutate(year = year(date))
+```
+
+Merge the data. 
+
+```{r}
+new_data_cl <- left_join(new_data_cl, swe) 
+```
+
+
+
+
+# Summary of covariates for entire watershed for study area description
+
+```{r}
+summary(new_data_all)
+
+new_data_all %>% 
+  distinct(reach_slope) %>% 
+  ggplot() + 
+  geom_histogram(aes(x = reach_slope))
+
+quantile(new_data_all %>% distinct(reach_slope) %>% pull(reach_slope), c(0.01, 0.95))
+
+
+new_data_all %>% 
+  distinct(Wetland) %>% 
+  ggplot() + 
+  geom_histogram(aes(x = Wetland))
+
+quantile(new_data_all %>% distinct(Wetland) %>% pull(Wetland), c(0.25, 0.75))
+```
+
+summary of habitat in spatial data.
+
+```{r}
+new_data_sp %>% 
+  filter(Pk_p > 0) %>% 
+  summarize(sum(LengthKM))
+
+new_data_sp %>% 
+  filter(K_r > 0 | K_p > 0 | K_s > 0) %>% 
+  summarize(sum(LengthKM))
+
+new_data_sp %>% 
+  filter(CO_r > 0 | CO_p > 0 | CO_s > 0) %>% 
+  summarize(sum(LengthKM))
+```
+
+
+# Make predictions 
+
+Load model
+
+```{r}
+load(file = "output/deshka_pm.Rdata")
+
+```
+
+Predict. Need to center the new data because intercept is based on centered data.
+
+```{r}
+
+tair3_mn <- attr(temp.dm$tair3c, "scaled:center")
+jd_mn <- attr(temp.dm$jdc, "scaled:center")
+cont_area_mn <- attr(temp.dm$cont_areac, "scaled:center")
+
+new_data_all <- new_data_all %>% 
+  mutate(tair3c = tair3 - tair3_mn,
+         jdc = jd - jd_mn,
+         cont_areac = cont_area - cont_area_mn)
+
+
+preds <- predict(deshka_pm, newdata = new_data_all, level = 0:1)
+
+preds <- cbind(new_data_all, preds %>% dplyr::select(predict.fixed:predict.HUC_name))
+
+```
+
+Add additional variables and also create a new predict field that has best predictions from each level.
+And add a short id for the nhdid that can be used to filter and test future mapping and metrics.
+
+```{r}
+
+preds <- preds %>% 
+  mutate(year = year(date),
+         month = month(date),
+         decade = case_when(year > 1979 & year < 1990 ~ "1980s",
+                            year > 1989 & year < 2000 ~ "1990s",
+                            year > 1999 & year < 2010 ~ "2000s",
+                            year > 2009 & year < 2020 ~ "2010s"),
+         predict = case_when(!is.na(predict.HUC_name) ~ predict.HUC_name,
+                             !is.na(predict.fixed) ~ predict.fixed),
+         nhdID_short = substr(nhdID, 10, 14))
+
+preds %>% 
+  filter(predict < 0) %>% 
+  distinct(year, jd, HUC_name) %>% 
+  arrange(year, jd)
+
+preds %>% filter(jd == 261)
+
+
+```
+
+Filter to june 1 only and remove the covariates. At this point, we are interested in using the preds to create metrics. From there, we can rejoin to spatial data and summarize - e.g. by species or life stage.
+
+```{r}
+preds %>% filter(jd == 152) %>% distinct(date)
+
+preds <- preds %>% 
+  filter(jd > 151) %>% 
+  select(date, HUC_name, site_ID, predict.fixed:nhdID_short)
+
+
+```
+
+
+Save predictions data frame.
+
+```{r}
+save(preds, file = "output/preds.Rdata")
+
+```
+
+Save csv for project data portal with limited attributes needed for sharing. 
+FILTER TO JUST JUNE 1 ONLY.
+
+
+Try predictions on a model with a season by tair^2 interaction term to see if this gets rid of below zero data in fall.
+
+```{r}
+
+fit <- lme(mean ~ tair3c + I(tair3c^2) + jdc + I(jdc^2) +
+             cont_areac + season + season:(tair3c + I(tair3c^2)), 
+           random = ~ 1|HUC_name, data = temp.dm, na.action = "na.fail") 
+
+new_data2 <- new_data_all %>% 
+  mutate(season = case_when(jd < 188 ~ "spring", 
+                              jd > 187 ~ "fall"))
+
+preds_test <- predict(fit, newdata = new_data2, level = 0:1)
+
+preds <- cbind(new_data_all, preds %>% dplyr::select(predict.fixed:predict.HUC_name))
+
+```
+# Predictions on scaled data - not needed.
+
+ 
+Make predictions for spring using original scaling from data input to model. From stackoverflow: https://stackoverflow.com/questions/53324971/back-transform-coefficients-from-glmer-with-scaled-independent-variables-for-pre
+
+Interesting in comparing predictions for more complex vs. simpler models.
+
+```{r}
+
+form = as.formula( paste("mean ~ ", paste(model_S4.1, collapse = "+") ) )
+fit_s4.1 <- lme(form, data = spring, 
+           random = ~tair3|HUC12, weights = vf1, method = "REML")
+
+form = as.formula( paste("mean ~ ", paste(model_S4.5, collapse = "+") ) )
+fit_s4.5 <- lme(form, data = spring, 
+           random = ~tair3|HUC12, weights = vf1, method = "REML")
+
+## scale variable x using center/scale attributes
+## of variable y
+scfun <- function(x,y) {
+    scale(x, 
+          center=attr(y,"scaled:center"), 
+          scale=attr(y,"scaled:scale"))
+}
+
+## scale prediction frame
+new_data_spring_sc <- transform(new_data_spring,
+                        tair3sc = scfun(tair3, spring$tair3sc),
+                        jdsc = scfun(jd, spring$jdsc),
+                        sweA1sc = scfun(sweA1, spring$sweA1sc),
+                        prcp5sc = scfun(prcp5, spring$prcp5sc),
+                        reach_slopesc = scfun(reach_slope, spring$reach_slopesc),
+                        wetlandsc = scfun(Wetland, spring$wetlandsc),
+                        cont_areasc = scfun(cont_area, spring$cont_areasc)) %>% 
+  mutate(tair3sc.sq = tair3sc^2)
+
+new_data_spring_sc %>% 
+  mutate(s4.1 = predict(fit_s4.1, newdata = new_data_spring_sc %>% filter(month(date) == 6, year == 2019)),
+         s4.5 = predict(fit_s4.5, newdata = new_data_spring_sc %>% filter(month(date) == 6, year == 2019))) %>% 
+  group_by(HUC_name) %>% 
+  summarize(june_s4.1 = max(s4.1),
+            june_s4.5 = max(s4.5)) %>%
+  pivot_longer(cols = june_s4.1:june_s4.5, names_to = "model") %>% 
+  ggplot() +
+  geom_point(aes(y = HUC_name, x = value, shape = model)) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+  
+```
+
+
+
+
+# Future scenarios
+
+Create a current baseline using predictions for 2000-2019. Baseline includes average values across all RCAs for 3-day air temperatures. 
+
+New data for predicting stream tempatures:
+
+* Scenario 1: 2 deg air temperature change.
+* Scenario 2: 4 deg air temperature change.
+
+Create data frames for prediction under the two scenarios.
+
+```{r}
+
+new_data_S1 <- new_data_all %>% 
+  filter(year(date) %in% 2000:2019) %>% 
+  group_by(HUC_name, nhdID, jd, cont_area) %>% 
+  summarize(tair3 = mean(tair3) + 2)
+
+new_data_S2 <- new_data_all %>% 
+  filter(year(date) %in% 2000:2019) %>% 
+  group_by(HUC_name, nhdID, jd, cont_area) %>% 
+  summarize(tair3 = mean(tair3) + 4)
+
+```
+
+Predict. Need to center the new data because intercept is based on centered data.
+
+```{r}
+
+tair3_mn <- attr(temp.dm$tair3c, "scaled:center")
+jd_mn <- attr(temp.dm$jdc, "scaled:center")
+cont_area_mn <- attr(temp.dm$cont_areac, "scaled:center")
+
+new_data_S1 <- new_data_S1 %>% 
+  mutate(tair3c = tair3 - tair3_mn,
+         jdc = jd - jd_mn,
+         cont_areac = cont_area - cont_area_mn)
+
+new_data_S2 <- new_data_S2 %>% 
+  mutate(tair3c = tair3 - tair3_mn,
+         jdc = jd - jd_mn,
+         cont_areac = cont_area - cont_area_mn)
+
+preds_S1 <- cbind(new_data_S1 %>% ungroup() %>% dplyr::select(-HUC_name), predict(deshka_pm, newdata = new_data_S1, level = 0:1)) %>% 
+  mutate(scenario = "plus2")
+preds_S2 <- cbind(new_data_S2 %>% ungroup() %>% dplyr::select(-HUC_name), predict(deshka_pm, newdata = new_data_S2, level = 0:1)) %>% 
+  mutate(scenario = "plus4")
+
+preds_fut <- rbind(preds_S1, preds_S2)
+
+```
+
+Add additional variables and also create a new predict field that has best predictions from each level.
+And add a short id for the nhdid that can be used to filter and test future mapping and metrics.
+Filter to june 1 only. 
+
+
+```{r}
+
+preds_fut <- preds_fut %>% 
+  mutate(predict = case_when(!is.na(predict.HUC_name) ~ predict.HUC_name,
+                             !is.na(predict.fixed) ~ predict.fixed),
+         nhdID_short = substr(nhdID, 10, 14)) %>% 
+  filter(jd > 151)
+```
+
+Add baseline predictions to data frame and only include pertinent fields.
+
+```{r}
+
+preds_bl <- preds %>% 
+  mutate(jd = as.numeric(format(date, "%j"))) %>% 
+  filter(year %in% 2000:2019, jd > 151) %>% 
+  group_by(HUC_name, nhdID_short, jd) %>% 
+  summarize(predict = mean(predict)) %>% 
+  mutate(scenario = "baseline")
+
+preds_fut2 <- rbind(preds_bl, preds_fut %>% dplyr::select(HUC_name, nhdID_short, jd, predict, scenario))
+
+preds_fut2 %>% 
+  ungroup() %>% 
+  group_by(HUC_name, scenario) %>% 
+  summarize(mean = mean(predict)) %>% 
+  pivot_wider(names_from = scenario, values_from = mean)
+
+```
+
+Save predictions data frame. -> calculate metrics in script 3, make figures in script 5.
+
+```{r}
+save(preds_fut2, file = "output/preds_fut2.Rdata")
+
+```
+
+
+
+#stopped here
+
+rest of the code below was copied in from anchor. either delete bec future scenarios are done or move to figures and tables script if useful. 8/12/20
+
+Predictions for four scenarios.
+
+Function to predict by spring and fall models and bind data together.
+
+```{r}
+
+scenario_predictions <- function(newData_byScenario) {
+  spring_dat <- newData_byScenario %>% filter(day < 202)
+  spring_preds <- spring_dat %>% 
+    ungroup() %>% 
+    mutate(preds_fut = predict(spring.lm, newdata = spring_dat))
+  fall_dat <- newData_byScenario %>% filter(day > 201)
+  fall_preds <- fall_dat %>% 
+    ungroup() %>% 
+    mutate(preds_fut = predict(fall.lm, newdata = fall_dat))
+  preds <- bind_rows(spring_preds, fall_preds) %>% 
+    mutate(change = preds_fut - preds_bl,
+           date = as.Date(day, origin = "1980-01-01"),
+           month = month(date))
+  return(preds)
+}
+
+```
+
+Predict across four scenarios.
+
+```{r}
+preds_S1 <- scenario_predictions(newData_S1)
+save(preds_S1, file = "output/preds_S1.Rdata")
+
+preds_S2 <- scenario_predictions(newData_S2)
+save(preds_S2, file = "output/preds_S2.Rdata")
+
+preds_S3 <- scenario_predictions(newData_S3)
+save(preds_S3, file = "output/preds_S3.Rdata")
+
+preds_S4 <- scenario_predictions(newData_S4)
+save(preds_S4, file = "output/preds_S4.Rdata")
+
+```
+
+
+# NOT DONE - replaced with simpler code to a table.
+For each scenario, calculate the mean monthly temperature and the mean monthly temperature change. Include the baseline mean monthly temperature as well for putting in ArcGIS.
+
+Read in reaches feature class from geodb.
+
+```{r}
+fgdb <- "T:\\Aquatic\\KFHP\\Geodatabases\\Anchor.gdb"
+
+#merge with spatial data and export
+rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_06022020") %>%
+  mutate(rca_id = reach_id) %>% 
+  select(rca_id, Shape, Shape_Length)
+```
+
+Create monthly metrics. 
+
+```{r}
+
+baseline_monthly_temps <- preds_S1 %>% 
+  filter(month %in% 6:9) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_bl = mean(preds_bl)) %>% 
+  spread(key = month, value = mean_bl) %>% 
+  rename(bl_6 = "6", bl_7 = "7", bl_8 = "8", bl_9 = "9")
+
+S1_monthly_temps <- preds_S1 %>% 
+  filter(month %in% 6:9) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_fut = mean(preds_fut)) %>% 
+  spread(key = month, value = mean_fut) %>% 
+  rename(S1_6 = "6", S1_7 = "7", S1_8 = "8", S1_9 = "9")
+
+S2_monthly_temps <- preds_S2 %>% 
+  filter(month %in% 6:9) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_fut = mean(preds_fut)) %>% 
+  spread(key = month, value = mean_fut) %>% 
+  rename(S2_6 = "6", S2_7 = "7", S2_8 = "8", S2_9 = "9")
+
+S3_monthly_temps <- preds_S3 %>% 
+  filter(month %in% 6:9) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_fut = mean(preds_fut)) %>% 
+  spread(key = month, value = mean_fut) %>% 
+  rename(S3_6 = "6", S3_7 = "7", S3_8 = "8", S3_9 = "9")
+
+S4_monthly_temps <- preds_S4 %>% 
+  filter(month %in% 6:9) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_fut = mean(preds_fut)) %>% 
+  spread(key = month, value = mean_fut) %>% 
+  rename(S4_6 = "6", S4_7 = "7", S4_8 = "8", S4_9 = "9")
+
+```
+
+Save to shapefiles.
+
+```{r}
+
+
+rcas_baseline <- sp::merge (rca_reach, baseline_monthly_temps, by="rca_id") 
+st_write(rcas_baseline, "output/Shapefiles/rcas_baseline.shp", driver="ESRI Shapefile")
+
+rcas_S1 <- sp::merge (rca_reach, S1_monthly_temps, by="rca_id") 
+st_write(rcas_S1, "output/Shapefiles/rcas_S1.shp", driver="ESRI Shapefile")
+
+rcas_S2 <- sp::merge (rca_reach, S2_monthly_temps, by="rca_id") 
+st_write(rcas_S2, "output/Shapefiles/rcas_S2.shp", driver="ESRI Shapefile")
+
+rcas_S3 <- sp::merge (rca_reach, S3_monthly_temps, by="rca_id") 
+st_write(rcas_S3, "output/Shapefiles/rcas_S3.shp", driver="ESRI Shapefile")
+
+rcas_S4 <- sp::merge (rca_reach, S4_monthly_temps, by="rca_id") 
+st_write(rcas_S4, "output/Shapefiles/rcas_S4.shp", driver="ESRI Shapefile")
+
+
+```
+
+
+Differences for four scenarios.
+
+```{r}
+S1_monthly_diffs <- preds_S1 %>% 
+  filter(month %in% 6:9) %>% 
+  mutate(diff = preds_fut - preds_bl) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_diff = mean(diff)) %>% 
+  spread(key = month, value = mean_diff) %>% 
+  rename(S1_6 = "6", S1_7 = "7", S1_8 = "8", S1_9 = "9")
+
+S2_monthly_diffs <- preds_S2 %>% 
+  filter(month %in% 6:9) %>% 
+  mutate(diff = preds_fut - preds_bl) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_diff = mean(diff)) %>% 
+  spread(key = month, value = mean_diff) %>% 
+  rename(S2_6 = "6", S2_7 = "7", S2_8 = "8", S2_9 = "9")
+
+S3_monthly_diffs <- preds_S3 %>% 
+  filter(month %in% 6:9) %>% 
+  mutate(diff = preds_fut - preds_bl) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_diff = mean(diff)) %>% 
+  spread(key = month, value = mean_diff) %>% 
+  rename(S3_6 = "6", S3_7 = "7", S3_8 = "8", S3_9 = "9")
+
+S4_monthly_diffs <- preds_S4 %>% 
+  filter(month %in% 6:9) %>% 
+  mutate(diff = preds_fut - preds_bl) %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_diff = mean(diff)) %>% 
+  spread(key = month, value = mean_diff) %>% 
+  rename(S4_6 = "6", S4_7 = "7", S4_8 = "8", S4_9 = "9")
+
+
+```
+
+Save to shapefiles.
+
+```{r}
+
+rcas_S1_diff <- sp::merge (rca_reach, S1_monthly_diffs, by="rca_id") 
+st_write(rcas_S1_diff, "output/Shapefiles/rcas_S1_diff.shp", driver="ESRI Shapefile")
+
+rcas_S2_diff <- sp::merge (rca_reach, S2_monthly_diffs, by="rca_id") 
+st_write(rcas_S2_diff, "output/Shapefiles/rcas_S2_diff.shp", driver="ESRI Shapefile")
+
+rcas_S3_diff <- sp::merge (rca_reach, S3_monthly_diffs, by="rca_id") 
+st_write(rcas_S3_diff, "output/Shapefiles/rcas_S3_diff.shp", driver="ESRI Shapefile")
+
+rcas_S4_diff <- sp::merge (rca_reach, S4_monthly_diffs, by="rca_id") 
+st_write(rcas_S4_diff, "output/Shapefiles/rcas_S4_diff.shp", driver="ESRI Shapefile")
+
+
+```
+
+# Table of mean monthly temeperatures for baseline and future scenarios.
+
+Want mean July temperatures for baseline and future scenarios for mapping.
+
+```{r}
+
+mean_monthly_temps_baseline <- preds_S1 %>% 
+  group_by(rca_id, month) %>% 
+  summarize(baseline = mean(preds_bl)) %>% 
+  pivot_wider(names_from = month, values_from = baseline, names_prefix = "baseline_")
+
+mean_monthly_temps_S1 <- preds_S1 %>% 
+  group_by(rca_id, month) %>% 
+  summarize(S1 = mean(preds_fut)) %>% 
+  pivot_wider(names_from = month, values_from = S1, names_prefix = "low2_")
+
+mean_monthly_temps_S2 <- preds_S2 %>% 
+  group_by(rca_id, month) %>% 
+  summarize(S2 = mean(preds_fut)) %>% 
+  pivot_wider(names_from = month, values_from = S2, names_prefix = "low4_")
+
+mean_monthly_temps_S3 <- preds_S3 %>% 
+  group_by(rca_id, month) %>% 
+  summarize(S3 = mean(preds_fut)) %>% 
+  pivot_wider(names_from = month, values_from = S3, names_prefix = "high2_")
+
+mean_monthly_temps_S4 <- preds_S4 %>% 
+  group_by(rca_id, month) %>% 
+  summarize(S4 = mean(preds_fut)) %>% 
+  pivot_wider(names_from = month, values_from = S4, names_prefix = "high4_")
+
+
+future_July_temps <- left_join(mean_monthly_temps_baseline %>% select(rca_id, baseline_7),
+          mean_monthly_temps_S1 %>% select(rca_id, low2_7))
+future_July_temps <- left_join(future_July_temps,
+          mean_monthly_temps_S2 %>% select(rca_id, low4_7))
+future_July_temps <- left_join(future_July_temps,
+          mean_monthly_temps_S3 %>% select(rca_id, high2_7))
+future_July_temps <- left_join(future_July_temps,
+          mean_monthly_temps_S4 %>% select(rca_id, high4_7))
+
+future_July_temps
+
+write.csv(future_July_temps, file = "output/Future_July_temps.csv")
+
+```
+
+Combine all scenarios so can calculate metrics for each.
+
+```{r}
+fut_preds <- bind_rows(preds_S1 %>% mutate(scenario = "baseline") %>% 
+                         select(rca_id, month, day, scenario, preds = preds_bl),
+                       preds_S1 %>% mutate(scenario = "S1") %>% 
+                         select(rca_id, month, day, scenario, preds = preds_fut),
+                       preds_S2 %>% mutate(scenario = "S2") %>% 
+                         select(rca_id, month, day, scenario, preds = preds_fut),
+                       preds_S3 %>% mutate(scenario = "S3") %>% 
+                         select(rca_id, month, day, scenario, preds = preds_fut),
+                       preds_S4 %>% mutate(scenario = "S4") %>% 
+                         select(rca_id, month, day, scenario, preds = preds_fut))
+
+
+fut_mets <- fut_preds %>% 
+  group_by(rca_id, scenario) %>% 
+  mutate(MA_mean = rollmean(preds, k = 7, align = "center", fill = NA)) %>%  
+  summarize(MxDAT = max(preds),
+            MxDAT_jd = day[max(preds) == preds][1],
+            MA7d_DAT = max(MA_mean, na.rm = TRUE),
+            MA7d_DAT_jd = day[max(MA_mean, na.rm = TRUE) == MA_mean][1],
+            CDD = sum(preds),
+            RNG = max(preds) - min(preds),
+            SIGMA_MN = var(preds),
+            SUM_13_jas = sum(preds[month %in% 7:9] > 13),
+            SIGMA_MN_jas = var(preds[month %in% 7:9]),
+            June_mn = mean(preds[month == 6]),
+            July_mn = mean(preds[month == 7]),
+            Aug_mn = mean(preds[month == 8]),
+            Sep_mn = mean(preds[month == 9]))
+
+#check
+
+fut_preds %>% 
+  filter(rca_id == 1, scenario == "S1") %>% 
+  group_by(rca_id, scenario) %>% 
+  mutate(MA_mean = rollmean(preds, k = 7, align = "center", fill = NA))
+
+fut_mets %>% 
+  filter(rca_id == 1, scenario == "S1")
+
+```
+
+
+Save mean July temperature and MA7d_MAT for mapping.
+
+```{r}
+
+left_join(fut_mets %>% 
+            select(rca_id, scenario, MA7d_DAT) %>% 
+            pivot_wider(names_from = scenario, values_from = MA7d_DAT, names_prefix = "MA7d_DAT_"),
+          fut_mets %>% 
+            select(rca_id, scenario, July_mn) %>% 
+            pivot_wider(names_from = scenario, values_from = July_mn, names_prefix = "July_mn_")) %>% 
+  write.csv(file = "output/Future_metrics.csv")
+
+```
+
+Plot of future metrics.
+
+```{r}
+
+fut_mets %>% 
+  ggplot() +
+  geom_histogram(aes(x = July_mn)) +
+  facet_wrap(~scenario)
+
+
+fut_mets %>% 
+  ggplot() +
+  geom_density(aes(x = July_mn, color = scenario)) 
+```
+
+
+# Distributions of temperature changes. 
+
+```{r}
+
+scen_change <- bind_rows(preds_S1 %>%
+            group_by(rca_id, month) %>%
+            summarize(ave_change = mean(change)) %>%
+            mutate(scenario = "S1"),
+          preds_S2 %>% 
+            group_by(rca_id, month) %>% 
+            summarize(ave_change = mean(change)) %>%
+            mutate(scenario = "S2"),
+          preds_S3 %>% 
+            group_by(rca_id, month) %>% 
+            summarize(ave_change = mean(change)) %>%
+            mutate(scenario = "S3"),
+          preds_S4 %>% 
+            group_by(rca_id, month) %>% 
+            summarize(ave_change = mean(change)) %>%
+            mutate(scenario = "S4"))
+
+```
+
+Figures of changes.
+
+```{r}
+
+scen_change %>%
+  filter(month %in% 6:9) %>% 
+  mutate(scenario = factor(scenario, labels = c("Low snow + 2 deg change",
+                                                "Low snow + 4 deg change",
+                                                "High snow + 2 deg change",
+                                                "High snow + 4 deg change"))) %>% 
+  ggplot() +
+  geom_density(aes(x = ave_change, fill = as.factor(month)), alpha = 0.4) +
+  facet_wrap(~scenario) +
+  theme_bw() +
+  labs(x = "Stream temperature change",
+       title = "Changes in stream temperature for four scenarios",
+       subtitle = "Average monthly change for all rcas",
+       fill = "month")
+
+
+scen_change %>%
+  filter(month %in% 6:9) %>% 
+  mutate(scenario = factor(scenario, labels = c("Low snow + 2 deg change",
+                                                "Low snow + 4 deg change",
+                                                "High snow + 2 deg change",
+                                                "High snow + 4 deg change"))) %>% 
+  ggplot() +
+  geom_density(aes(x = ave_change, fill = as.factor(month)), alpha = 0.4) +
+  facet_wrap(~scenario) +
+  theme_bw() +
+  labs(x = "Stream temperature change",
+       title = "Changes in stream temperature for four scenarios",
+       subtitle = "Average monthly change for all rcas",
+       fill = "month")
+
+ggsave("output/Density plots of changes by scenario.jpg")
+ 
+
+```
+
+Compare density plots of baseline to future by month for each scenario, using temperatures. Density plots show how distributions are changing. For Chinook rearing, spawning, present.
+
+
+```{r}
+
+preds_S4 %>% 
+  group_by(rca_id, month) %>% 
+  summarize(mean_bl = mean(preds_bl),
+            mean_fut = mean(preds_fut)) %>% 
+  ggplot() +
+  geom_density(aes(x = preds_bl, fill = as.factor(month)))
+
+```
+

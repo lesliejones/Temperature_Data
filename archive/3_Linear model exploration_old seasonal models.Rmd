@@ -1,0 +1,1557 @@
+---
+title: "3_Linear model exploration"
+author: "Leslie Jones"
+date: "1/7/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
+
+# library(lubridate)
+# library(rgdal)
+# library(zoo)
+# library(sf)
+# library(corrplot)
+# library(MuMIn)
+# library(ape)
+# library(readxl)
+# library(VIF)
+# library(jtools)
+library(nlme)
+library(car)
+# library(corrplot)
+# library(mgcv)
+# library(visreg)
+# library(GGally)
+# library(Metrics)
+# library(broom)
+library(tidyverse)
+# library(ggeffects)
+library(sjPlot)
+# library(MASS)
+library(effects)
+
+
+load(file = "output/temp.Rdata")
+# load(file = "output/tempMS.Rdata")
+
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- abs(cor(x, y))
+    txt <- format(c(r, 0.123456789), digits = digits)[1]
+    txt <- paste0(prefix, txt)
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = cex.cor * r)
+}
+
+```
+
+# Set up data frames for modeling - spring and fall.
+
+
+```{r}
+spring <- temp %>%
+  filter(day < 202)
+
+fall <- temp %>% 
+  filter(day > 201)
+
+spring_meanT <- spring %>% 
+  filter(!is.na(meanT))
+
+fall_meanT <- fall %>% 
+  filter(!is.na(meanT))
+
+```
+
+We also decided to remove Stariski Creek from the model because ... we don't have enough data... not sure or prediction accuracy was low. Not sure why we removed APU1? That is located at the confluence next to Sue's long-term monitoring site. Maybe we had high prediction error for this site?
+
+```{r}
+
+#currently not run
+spring <- temp %>%
+  filter(day < 202, !Site == "APU1", !HUC_name == "Stariski Creek")
+
+fall <- temp %>% 
+  filter(day > 201, !Site == "APU1", !HUC_name == "Stariski Creek")
+
+spring_meanT <- spring %>% 
+  filter(!is.na(meanT))
+
+fall_meanT <- fall %>% 
+  filter(!is.na(meanT))
+
+temp_meanT <- temp %>% 
+  filter(!is.na(meanT), !Site == "APU1", !HUC_name == "Stariski Creek")
+
+```
+
+
+# Explore covariates to include in model
+
+```{r, ehco=FALSE, warnings = FALSE}
+#climate covariates
+hist(temp$ma_mean)
+hist(temp$tair)
+hist(temp$prcp)
+hist(temp$swe)
+
+#then filter on distinct rcas to look at spatial covariates
+temp_rca <- temp %>% distinct(rca_id, .keep_all = TRUE)
+
+hist(temp_rca$elev_mean)
+hist(temp_rca$elev_mean_ca)
+hist(temp_rca$cont_area)
+hist(temp_rca$slope_P)
+
+summary(temp_rca)
+
+#summary(temp$sweA1)
+#temp %>% 
+ # distinct(rca_id, year, sweA1) %>% 
+ # arrange(desc(sweA1))
+
+#hist(temp$sweA1)
+```
+
+# Pairplot of spatial covariates
+
+
+```{r}
+
+temp %>% 
+  distinct(reach_slope, reach_length, Forest, Shrub, Wetland, Riparian, 
+           rca_elev_min, rca_elev_max, rca_elev_mn, 
+           ca_elev_mn, cont_area, elev_delta, sweA1) %>% 
+  cor(.) %>% 
+  corrplot.mixed(.)
+
+```
+
+Alternatively, a pairplot so can see the data points.
+
+```{r}
+temp %>% 
+  distinct(reach_slope, reach_length, Forest, Shrub, Wetland, Riparian, 
+           rca_elev_min, rca_elev_max, rca_elev_mn, 
+           ca_elev_mn, cont_area, elev_delta, sweA1) %>% 
+  pairs(upper.panel = panel.cor, lower.panel = panel.smooth)
+  
+```
+
+Look at linear model for 2 seasons based on ascending and descending limb of stream temperature and air temperature distribution: see 2_Data and model exploration.Rmd - split is julian day 201.  Will have 2 seasons June 1 - July 20: (152-201) and july 21 - September 30: (202-303).
+
+
+
+
+Check VIF for all covariates in full linear model without any random effect. Decided to drop forest and then all remaining covariates have VIF < 3.
+
+```{r}
+
+full.model <- lm(meanT ~ tair3 + day + sweA1 + prcp5 + reach_slope + 
+                         Wetland + Riparian + rca_elev_mn + 
+                         ca_elev_mn + cont_area,
+                       data = spring_meanT, na.action = "na.fail")
+
+vif(full.model)
+
+#try dropping ca_elev_mn
+
+full.model <- lm(meanT ~ tair3 + day + sweA1 + prcp5 + reach_slope + 
+                         Wetland + Riparian + rca_elev_mn + 
+                         cont_area,
+                       data = spring_meanT, na.action = "na.fail")
+vif(full.model)
+
+#try dropping riparian
+
+full.model <- lm(meanT ~ tair3 + day + sweA1 + prcp5 +  
+                         Wetland + rca_elev_mn + reach_slope + 
+                         cont_area,
+                       data = spring_meanT, na.action = "na.fail")
+
+vif(full.model)
+
+#think about dropping reach slope, currently all VIF < 3
+
+```
+
+We should probably check these same VIF with the fall model.
+
+
+```{r}
+
+full.model <- lm(meanT ~ tair3 + day + sweA1 + prcp5 + reach_slope + 
+                         Wetland + Riparian + rca_elev_mn + 
+                         ca_elev_mn + cont_area,
+                       data = fall_meanT, na.action = "na.fail")
+
+vif(full.model)
+
+#try dropping ca_elev_mn
+
+full.model <- lm(meanT ~ tair3 + day + sweA1 + prcp5 + reach_slope + 
+                         Wetland + Riparian + rca_elev_mn + 
+                         cont_area,
+                       data = fall_meanT, na.action = "na.fail")
+vif(full.model)
+
+#try dropping riparian
+
+full.model <- lm(meanT ~ tair3 + day + sweA1 + prcp5 +  
+                         Wetland + rca_elev_mn + reach_slope +  
+                         cont_area,
+                       data = fall_meanT, na.action = "na.fail")
+
+vif(full.model)
+
+
+```
+
+
+Further exploration to make sure we dropped the variables with the weakest relationships to stream temperature. All looks good. Mean watershed elevation has no relation to stream temperature and reach slope and rca mean elevation are both negatively correlated to stream temperature, but elevation looks better.
+
+
+```{r}
+
+temp_meanT %>% 
+  ggplot(aes(x = reach_slope, y = meanT)) +
+  geom_point() 
+
+temp_meanT %>% 
+  ggplot(aes(x = ca_elev_mn, y = meanT)) +
+  geom_point() 
+
+temp_meanT %>% 
+  ggplot(aes(x = rca_elev_mn, y = meanT)) +
+  geom_point() 
+
+temp_meanT %>% 
+  summarize(cor(rca_elev_mn, meanT),
+            cor(reach_slope, meanT),
+            cor(ca_elev_mn, meanT))
+
+
+```
+
+
+Pairplot of covariates.
+
+```{r}
+
+temp %>% 
+  select(tair3, day, sweA1, prcp5, Wetland, rca_elev_mn, cont_area) %>% 
+  pairs(upper.panel = panel.cor, lower.panel = panel.smooth)
+
+
+```
+
+Relationship between air temperature and stream temperature by site and season. Not a real strong reason to follow up with a quadratic term for air temperature that I can see.
+
+```{r}
+
+spring_meanT %>% 
+  ggplot(aes(x = tair3, y = meanT)) +
+  geom_point() +
+  facet_wrap(~Site)
+
+fall_meanT %>% 
+  ggplot(aes(x = tair3, y = meanT)) +
+  geom_point() +
+  facet_wrap(~Site)
+
+
+
+```
+
+
+
+## NOT RUN: Simple spring and fall models for testing predictions 
+
+For testing predictions, just use air temperature and small set of spatial covariates: slope, rca mean elevation, and contributing area. Complete set inludes reach slope, wetlands, rca mean elevation, contributing area mean elevation, contributing area, and swe April 1st, 
+
+```{r}
+
+spring.lm <- lm(meanT ~ tair3 + reach_slope + cont_area + rca_elev_mn, data = spring_meanT)
+
+summary(spring.lm)
+
+vif(spring.lm)
+
+model.rmse.spring(spring.lm)
+
+#drop elevation since not significant
+
+spring.lm <- lm(meanT ~ tair3 + reach_slope + cont_area, data = spring_meanT)
+
+```
+
+Simple fall model.
+
+```{r}
+
+fall.lm <- lm(meanT ~ tair3 + reach_slope + cont_area + rca_elev_mn, data = fall_meanT)
+
+summary(fall.lm)
+
+vif(fall.lm)
+
+model.rmse.fall(fall.lm)
+
+```
+
+Save both models so they can be loaded for the predictions (script 5).
+
+```{r}
+save(spring.lm, file = "output/spring.lm.Rdata")
+
+save(fall.lm, file = "output/fall.lm.Rdata")
+
+
+```
+
+
+
+
+
+## NOT RUN: Spatial model with HUC12 random effect versus simple fixed effects model
+
+Compare mixed effects model to linear model to see if random effect is better.
+
+```{r}
+
+full.model <- lm(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + cont_area * elev_mean, 
+                 data = spring_meanT, na.action = "na.fail")
+
+lme1 <- lme(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + cont_area * elev_mean, 
+            random = ~ 1|HUC_name, data = spring_meanT, na.action = "na.fail")
+
+AIC(lme1, full.model)
+
+anova(lme1, full.model)
+```
+
+Mixed effects model much better than model without random effect. Move forward with model selection, but switch to ML. Add RMSE to dredge table to compare models.
+
+```{r}
+
+lme2 <- lme(meanT ~ tair + sweM1 + prcp + slope_P + elev_mean + cont_area + wetland + shrub + cont_area * elev_mean, 
+            random = ~ 1|HUC_name, data = spring_meanT, na.action = "na.fail", method = "ML")
+
+
+lme2.dredge <- dredge(lme2, extra = c(model.rmse))
+lme2.dredge %>% kable
+
+write.csv(lme2.dredge, file = "output/lme dredge output.csv")
+
+```
+Remove wetland because small effect size - for a 10% increase in wetland cover a 0.1 deg increase in stream temp. Shrub also has a very small effect size and direction doesn't match hypthesis that shrubs provide shade: more shrub cover increases stream temperature.
+
+Remove interaction next. Anytime it is present it changes the direction and effect size of slope.
+
+Looks like contributing area, air temp, precip, and elevation are the most important variables and have similar RMSE to more complex models.
+
+Try for second and third best models in lme4 dredge results. No improvement in RMSE so no justification for keeping swe or reach slope.
+
+Try model 5, which removes precipitation from top model.
+
+Try model 16, which removes rca mean elevation - now just air temp and contributing area.
+
+Try model 32, which is just air temperature.... strange that coefficient goes to 1.0.
+
+Try model 23, which is air temperature and elevation.
+
+
+Check what the parameter estimates are for the random effect - ie how much does each huc shift off of the population level estimates?
+Following instructions in Zuur et al. pg. 108
+
+These seem really strange! the outlet has the warmest temperatures.
+
+```{r}
+lme4 <- lme(meanT ~ tair + cont_area, 
+            random = ~ 1|HUC_name, data = spring_meanT, na.action = "na.fail", method = "ML")
+
+
+ranef(lme4)
+```
+
+## NOT RUN: Linear models for spring and fall
+
+The shifts by HUC12 don't make sense so let's start all over with a regular linear model - no random effects - and go through fixed effects.
+
+Compare spring and fall models. Also check pairwise correlations and VIF for predictors for deciding on global models.
+
+Start with spring correlations. The difference in elevation between rca and contributing area has high correlation with a couple of covariates so just keep the mean elevations for each spatial scale (Siegel had said that differencing removed the multicollinearity, but not in this case). Shade is strongly negatively correlate to wetlands, which is interesting because it may mean those two effects can't be disentangled.
+
+```{r}
+spring_meanT %>%
+  mutate(shade = shrub + forest) %>% 
+  distinct(sweA1, slope_P, elev_mean, elev_mean_ca, elev_delta, cont_area, 
+           wetland, shrub, forest, shade, meanT) %>% 
+  cor %>% 
+  corrplot.mixed(.)
+
+temp %>% 
+  distinct(rca_id, elev_mean, elev_mean_ca) %>% 
+  arrange(elev_mean)
+```
+
+Drop shade because so strongly inversely correlated to wetland, which is a more important driver for the anchor. Drop elev_delta because it is pretty strongly correlated to cont_area.
+
+```{r}
+lm1 <- lm(meanT ~ tair + sweA1 + prcp + slope_P + elev_mean + cont_area + wetland, data = spring_meanT, na.action = "na.fail")
+
+vif(lm1)
+
+lm1.dredge <- dredge(lm1, extra = c(model.rmse.spring))  
+
+write.csv(lm1.dredge, "output/global spring dredge.csv")
+
+lm1.dredge
+
+```
+
+Compare the spring to the fall model to see if the split is needed.
+
+```{r}
+
+lm2 <- lm(meanT ~ tair + sweA1 + prcp + slope_P + elev_mean + cont_area + wetland, data = fall_meanT, na.action = "na.fail")
+
+vif(lm2)
+
+lm2.dredge <- dredge(lm2, extra = c(model.rmse.fall))
+write.csv(lm2.dredge, "output/global fall dredge.csv")
+
+```
+
+Try a combined model for June - Sept.
+
+```{r}
+
+lm3 <- lm(meanT ~ tair + sweA1 + prcp + slope_P + elev_mean + cont_area + wetland, data = temp_meanT, na.action = "na.fail")
+
+vif(lm3)
+
+lm3.dredge <- dredge(lm3, extra = c(model.rmse))
+write.csv(lm3.dredge, "output/global dredge spring and fall.csv")
+
+```
+
+## NOT RUN: Model sets and cross-validation
+
+What years can we leave out for testing temporal predictions? Decided to do a leave-one-out cross-validation on years and sites.
+
+```{r}
+temp %>% 
+  count(Site, year) %>% 
+  spread(key = year, value = n)
+
+temp %>% 
+  count(Site)
+```
+
+
+For spring, start with air temperature, contributing area, and slope. Compare that model to one with each other variable added: sweA1, elevation, precipitation, and wetlands.
+
+After first round of adding single variables, swe data improved the simple model by ~ 0.5 degrees. Add other variables to that model.
+
+```{r}
+
+spring.model.list <- list(meanT ~ tair3 + cont_area + rca_elev_mn,
+                          meanT ~ tair3 + cont_area + rca_elev_mn + day,
+                          meanT ~ tair3 + cont_area + rca_elev_mn + sweA1,
+                          meanT ~ tair3 + cont_area + rca_elev_mn + prcp5,
+                          meanT ~ tair3 + cont_area + rca_elev_mn + Wetland,
+                          meanT ~ tair3 + cont_area + rca_elev_mn + day + sweA1,
+                          meanT ~ tair3 + cont_area + rca_elev_mn + day + prcp5,
+                          meanT ~ tair3 + cont_area + rca_elev_mn + day + Wetland,
+                          meanT ~ tair3 + cont_area + rca_elev_mn + day + Wetland + prcp5 + sweA1 + 
+                            sweA1*day + rca_elev_mn*day,
+                          meanT ~ tair3 + day + prcp5 + sweA1 + cont_area + reach_slope + rca_elev_mn + Wetland + 
+                            rca_elev_mn*day + sweA1*Wetland)
+
+names(spring.model.list) <- c("simple", "simple_doy", "simple_swe", "simple_prcp", "simple_wet",
+                              "simple_doy_swe", "simple_doy_prcp", "simple_doy_wet", "global1", "global2")
+
+```
+
+Leave one out cross-validation and RMSE.
+Steps:
+ 
+* get list of sites
+* loop through all sites
+* leave a site out
+* build the model with remaining sites
+* predict for that site
+* calculate RMSE for predictions against observations 
+* save site name and RMSE for that site in a data frame
+* summarize mean RMSE over entire leave one out CV and SD of RMSEs
+
+
+```{r}
+
+sites <- spring_meanT %>% distinct(Site) %>% pull(Site)
+
+site.rmse <- tibble()
+site.preds <- tibble()
+
+for(i in sites){
+  test.dat <- spring_meanT %>% filter(Site == i)
+  train.dat <- spring_meanT %>% filter(!Site == i)
+  models <- lapply(spring.model.list, function(x) lm(x, data = train.dat, na.action = "na.fail"))
+  preds <- lapply(models, function(x) predict(x, newdata = test.dat))
+  
+  pred.dat <- tibble::enframe(unlist(preds), name = "model", value = "preds") %>% 
+    mutate(model = gsub("\\..*","", model))
+  test.dat.reps <- do.call("bind_rows", replicate(length(spring.model.list), 
+                                 test.dat %>% select(Site, sampleDate, meanT), simplify = FALSE))
+  pred.rows <- bind_cols(pred.dat, test.dat.reps)
+  site.preds <- bind_rows(site.preds, pred.rows)
+  
+  rmse <- lapply(preds, function(x) Metrics::rmse(test.dat$meanT, x))
+  newrows <- tibble::enframe(unlist(rmse), name = "model", value = "rmse") %>% 
+    mutate(site = i)
+  site.rmse <- bind_rows(site.rmse, newrows)
+}
+
+
+
+
+site.rmse %>% 
+  filter(model == "simple") %>% 
+  arrange(desc(rmse))
+
+site.rmse %>% 
+  group_by(model) %>% 
+  summarize(mean_rmse = mean(rmse),
+            sd_rmse = sd(rmse)) %>% 
+  arrange(mean_rmse)
+
+site.preds %>% 
+  ggplot(aes(x = meanT, y = preds)) + 
+  geom_point(shape = 1) +
+  facet_wrap(~Site) +
+  geom_abline(slope = 1, intercept = 0)
+
+site.preds %>% 
+  group_by(model) %>% 
+  summarize(rmse = Metrics::rmse(meanT, preds)) %>% 
+  arrange(desc(rmse))
+
+```
+
+Temporal cross-validation with spring models.
+
+```{r}
+
+years <- spring_meanT %>% distinct(year) %>% pull(year)
+
+year.rmse <- tibble()
+
+for(i in years){
+  test.dat <- spring_meanT %>% filter(year == i)
+  train.dat <- spring_meanT %>% filter(!year == i)
+  models <- lapply(spring.model.list, function(x) lm(x, data = train.dat, na.action = "na.fail"))
+  preds <- lapply(models, function(x) predict(x, newdata = test.dat))
+  nobs <- nrow(test.dat)
+  rmse <- lapply(preds, function(x) sqrt(sum(((x - test.dat$meanT)) ^ 2)/nobs))
+  newrows <- tibble::enframe(unlist(rmse), name = "model", value = "rmse") %>% 
+    mutate(year = i)
+  year.rmse <- bind_rows(year.rmse, newrows)
+}
+
+year.rmse
+
+year.rmse %>% 
+  group_by(model) %>% 
+  summarize(mean_rmse = mean(rmse),
+            sd_rmse = sd(rmse))
+
+year.rmse %>% 
+  group_by(year) %>% 
+  summarize(mean_rmse = mean(rmse),
+            sd_rmse = sd(rmse)) %>% 
+  arrange(desc(mean_rmse))
+
+year.swe.comp <- year.rmse %>% 
+  group_by(year) %>% 
+  summarize(mean_rmse = mean(rmse))
+
+left_join(spring_meanT %>%
+            group_by(sampyear) %>%
+            summarize(mean_sweA1 = mean(sweA1)) %>% 
+            rename(year = sampyear), year.swe.comp) %>% 
+  ggplot(aes(x = mean_sweA1, y = mean_rmse)) +
+  geom_point()
+
+```
+
+Best spring model.
+
+```{r}
+
+spring.lm <- lm(meanT ~ tair + slope_P + cont_area +  prcp + swe, data = spring_meanT)
+
+summary(spring.lm)
+
+sqrt(sum(((predict(spring.lm) - spring_meanT$meanT) ^ 2))/2235)
+```
+
+# SPRING Backwards selection from a global model
+
+Start by using a global model with all covariates and interactions per table with hypotheses. Drop insignificant effects and move forward. Once we have a model with all significant effects and interactions that make sense, check spatial and temporal cross-validation and drop additional covariates as needed until we reach the best model.
+
+Backwards selection from a global model per Siegal and Volk paper. Spring model.
+
+```{r}
+
+spring.gl <- lm(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland + 
+                  sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day, 
+                data = spring_meanT)
+
+summary(spring.gl)
+
+```
+Drop day by swe interaction.
+
+```{r}
+spring.gl <- lm(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland +  
+                  rca_elev_mn*day + sweA1*Wetland + Wetland*day, 
+                data = spring_meanT)
+
+summary(spring.gl)
+
+```
+
+Drop wetland by day interaction.
+
+```{r}
+spring.gl <- lm(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland +  
+                  rca_elev_mn*day + sweA1*Wetland, data = spring_meanT)
+
+summary(spring.gl)
+
+```
+
+Working with all data now (Stariski and APU1) - drop prcp now because no longer significant.
+
+```{r}
+spring.gl <- lm(meanT ~ tair3 + day + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland +  
+                  rca_elev_mn*day + sweA1*Wetland, data = spring_meanT)
+
+summary(spring.gl)
+
+```
+
+Check that remaining two interactions make sense using visualizations of their effects.
+
+```{r}
+
+visreg(spring.gl, "rca_elev_mn", by = "day")
+visreg2d(spring.gl, "day", "rca_elev_mn", plot.type = "persp")
+
+visreg(spring.gl, "Wetland", by = "sweA1")
+visreg2d(spring.gl, "sweA1", "Wetland", plot.type = "persp")
+
+```
+
+Look at model cross-validation metrics (RMSE) and drop additional covariates until model train and test RMSE are no longer improved.
+
+First create a function that spits out all of the model metrics for each model. RMSE and R2 for both training data and testing data (by site and year).
+
+```{r}
+modelMetrics <- function(model.form, model.data) {
+  
+  #training data r2 and rmse
+  fit <- lm(model.form, data = model.data)
+  train.mets <- glance(fit) %>% select(r.squared, adj.r.squared, AIC)
+  train.mets$rmse <- Metrics::rmse(model.data$meanT, predict(fit))
+  
+  #loop for spatial cross-validation
+  sites <- model.data %>% distinct(Site) %>% pull(Site)
+  site.preds <- tibble()
+  for(i in sites){
+    test.dat <- model.data %>% filter(Site == i)
+    train.dat <- model.data %>% filter(!Site == i)
+    fit <- lm(model.form, data = train.dat)
+    test.dat$preds <- predict(fit, newdata = test.dat)
+    site.preds <- bind_rows(site.preds, test.dat %>% select(Site, sampleDate, meanT, preds))
+  }
+  train.mets$site.xval.rmse <- Metrics::rmse(site.preds$meanT, site.preds$preds)
+  train.mets$site.xval.r2 <- summary(lm(meanT ~ preds, data = site.preds))$r.squared
+
+  #loop for temporal cross-validation
+  years <- model.data %>% distinct(year) %>% pull(year)
+  year.preds <- tibble()
+  for(i in years){
+    test.dat <- model.data %>% filter(year == i)
+    train.dat <- model.data %>% filter(!year == i)
+    fit <- lm(model.form, data = train.dat)
+    test.dat$preds <- predict(fit, newdata = test.dat)
+    year.preds <- bind_rows(year.preds, test.dat %>% select(Site, sampleDate, meanT, preds))
+  }
+  train.mets$year.xval.rmse <- Metrics::rmse(year.preds$meanT, year.preds$preds)
+  train.mets$year.xval.r2 <- summary(lm(meanT ~ preds, data = year.preds))$r.squared
+  train.mets$model.form <- paste(model.form)[3]
+  
+  return(train.mets)  
+}
+
+```
+
+Start with final model from stepwise backward selection that includes significant parameters.
+
+```{r}
+
+model.form1 <- formula(meanT ~ tair3 + day + sweA1 + 
+                         cont_area + reach_slope + rca_elev_mn + Wetland +
+                         rca_elev_mn*day + sweA1*Wetland)
+
+modelComp <- modelMetrics(model.form1, spring_meanT)
+
+fit <- lm(model.form1, data = spring_meanT)
+summary(fit)
+visreg(fit, "day", by = "rca_elev_mn")
+visreg(fit, "Wetland", by = "sweA1")
+
+```
+
+Try removing the swe by wetland interaction as that is the least significant. Once the interaction is removed, wetland is no longer significant, so remove that covariate as well.
+
+```{r}
+
+model.form2 <- formula(meanT ~ tair3 + day + sweA1 + 
+                         cont_area + reach_slope + rca_elev_mn + 
+                         rca_elev_mn*day)
+
+modelComp <- bind_rows(modelComp, modelMetrics(model.form2, spring_meanT))
+
+fit <- lm(model.form2, data = spring_meanT)
+summary(fit)
+visreg(fit, "rca_elev_mn", by = "day")
+
+```
+
+Try removing last interaction - rca elevation by day. This one has a strange effect with higher elevation sites warmer in early June that doesn't match our hypothesis. Once the interaction is removed, rca elevation is no longer significant so remove that as well.
+
+```{r}
+model.form3 <- formula(meanT ~ tair3 + day + sweA1 + 
+                         cont_area + reach_slope)
+
+modelComp <- bind_rows(modelComp, modelMetrics(model.form3, spring_meanT))
+
+fit <- lm(model.form3, data = spring_meanT)
+summary(fit)
+
+
+```
+
+
+Try removing swe, least significant of remaining effects.
+
+```{r}
+model.form4 <- formula(meanT ~ tair3 + day + 
+                         cont_area + reach_slope)
+
+modelComp <- bind_rows(modelComp, modelMetrics(model.form4, spring_meanT))
+
+springModelComp <- modelComp
+
+write.csv(springModelComp, file = "output/Spring model comparison.csv")
+
+```
+
+Look at which sites are not predicted well with final spring model. I don't see a good reason to drop all of Stariski or the apu1 site.
+
+```{r}
+model.form <- model.form3
+model.data <- spring_meanT
+
+#loop for spatial cross-validation
+  sites <- model.data %>% distinct(Site) %>% pull(Site)
+  site.preds <- tibble()
+  for(i in sites){
+    test.dat <- model.data %>% filter(Site == i)
+    train.dat <- model.data %>% filter(!Site == i)
+    fit <- lm(model.form, data = train.dat)
+    test.dat$preds <- predict(fit, newdata = test.dat)
+    site.preds <- bind_rows(site.preds, test.dat %>% select(Site, sampleDate, meanT, preds))
+  }
+
+spring_meanT %>%
+  distinct(Site, cont_area) %>% 
+  right_join(site.preds) %>% 
+  group_by(Site, cont_area) %>% 
+  summarize(rmse = Metrics::rmse(meanT, preds)) %>% 
+  ggplot(aes(x = cont_area, y = rmse)) +
+  geom_point() +
+  geom_text(aes(label = Site))
+  
+  
+```
+
+
+```{r}
+spring_meanT %>% 
+  count(Site, year) %>% 
+  spread(key = year, value = n)
+```
+
+Save final model.
+
+```{r}
+spring.lm <- lm(model.form3, data = spring_meanT)
+
+save(spring.lm, file = "output/spring.lm.Rdata")
+```
+
+
+Look at temporal auto-correlation in residuals.
+
+```{r}
+spring_meanT %>% 
+  mutate(resid = resid(spring.lm),
+         preds = predict(spring.lm)) %>% 
+  filter(Site == "CIK14", year %in% c(2008, 2015)) %>% 
+  ggplot() +
+  geom_point(aes(x = day, y = meanT)) +
+  geom_point(aes(x = day, y = preds), color = "red") +
+  geom_point(aes(x = day, y = resid), color = "gray") +
+  facet_wrap(~year)
+  
+  
+```
+
+
+## Check for random effects
+
+
+```{r}
+
+anchorSpr.form <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland + 
+                  sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day)
+
+S1 <- gls(anchorSpr.form, data = spring_meanT, na.action = "na.fail")
+
+S2 <- gam(meanT ~ s(tair3, k = 4) + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland + 
+                  sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day,
+                 data = spring_meanT, na.action = "na.fail")
+
+S3 <- lme(anchorSpr.form, data = spring_meanT, 
+                 random = ~ 1|HUC12, na.action = "na.fail") 
+
+S4 <- lme(anchorSpr.form, data = spring_meanT, 
+                 random = ~ tair3|HUC12, na.action = "na.fail") 
+
+data.frame(AIC = AIC(S1, S2, S3, S4),
+           rmse = c(rmse(spring_meanT$meanT, predict(S1)),
+           rmse(spring_meanT$meanT, predict(S2)),
+           rmse(spring_meanT$meanT, predict(S3)),
+           rmse(spring_meanT$meanT, predict(S4))))
+```
+
+
+
+
+# FALL Backwards selection from a global model
+
+Start by using a global model with all covariates and interactions per table with hypotheses. Drop insignificant effects and move forward. Once we have a model with all significant effects and interactions that make sense, check spatial and temporal cross-validation and drop additional covariates as needed until we reach the best model.
+
+Backwards selection from a global model per Siegal and Volk paper. 
+
+```{r}
+
+fall.gl <- lm(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                cont_area + reach_slope + rca_elev_mn + Wetland + 
+                sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day, 
+              data = fall_meanT)
+
+summary(fall.gl)
+
+```
+Drop day by wetland interaction. Wetland is now highly significant.
+
+```{r}
+fall.gl <- lm(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                cont_area + reach_slope + rca_elev_mn + Wetland + 
+                sweA1*day + rca_elev_mn*day + sweA1*Wetland, data = fall_meanT)
+
+summary(fall.gl)
+
+```
+
+Check that remaining three interactions make sense using visualizations of their effects.
+
+```{r}
+
+visreg(fall.gl, "rca_elev_mn", by = "day")
+visreg2d(fall.gl, "rca_elev_mn","day",  plot.type = "persp")
+
+visreg(fall.gl, "sweA1", by = "day")
+visreg2d(fall.gl, "sweA1", "day", plot.type = "persp")
+
+
+visreg(fall.gl, "Wetland", by = "sweA1")
+visreg2d(fall.gl, "sweA1", "Wetland", plot.type = "persp")
+
+```
+
+Look at model cross-validation metrics (RMSE) and drop additional covariates until model train and test RMSE are no longer improved.
+
+Start with final model from stepwise backward selection that includes significant parameters.
+
+```{r}
+
+model.form1 <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                         cont_area + reach_slope + rca_elev_mn + Wetland + 
+                         sweA1*day + rca_elev_mn*day + sweA1*Wetland)
+
+modelComp <- modelMetrics(model.form1, fall_meanT)
+
+summary(lm(model.form1, data = fall_meanT))
+
+```
+
+Try removing the swe by wetland interaction as that is the least significant. 
+
+```{r}
+
+model.form2 <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                         cont_area + reach_slope + rca_elev_mn + Wetland + 
+                         sweA1*day + rca_elev_mn*day)
+
+modelComp <- bind_rows(modelComp, modelMetrics(model.form2, fall_meanT))
+
+summary(lm(model.form2, data = fall_meanT))
+
+```
+
+Try removing wetland next.
+
+```{r}
+
+model.form3 <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                         cont_area + reach_slope + rca_elev_mn +  
+                         sweA1*day + rca_elev_mn*day)
+
+modelComp <- bind_rows(modelComp, modelMetrics(model.form3, fall_meanT))
+
+summary(lm(model.form3, data = fall_meanT))
+
+```
+
+Try removing each of the interactions - swe by day first.
+
+```{r}
+
+model.form4 <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                         cont_area + reach_slope + rca_elev_mn +  
+                         rca_elev_mn*day)
+
+modelComp <- bind_rows(modelComp, modelMetrics(model.form4, fall_meanT))
+
+summary(lm(model.form4, data = fall_meanT))
+
+```
+
+Remove day x elevation interaction.
+
+```{r}
+
+model.form5 <- formula(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                         cont_area + reach_slope + rca_elev_mn)
+
+modelComp <- bind_rows(modelComp, modelMetrics(model.form5, fall_meanT))
+
+summary(lm(model.form5, data = fall_meanT))
+visreg(lm(model.form5, data = fall_meanT), "prcp5")
+```
+
+Save model comparison table.
+
+```{r}
+
+fallModelComp <- modelComp
+
+write.csv(fallModelComp, file = "output/fallModelComp.csv")
+```
+
+
+
+Save final model.
+
+```{r}
+fall.lm <- lm(model.form3, data = fall_meanT)
+
+save(fall.lm, file = "output/fall.lm.Rdata")
+```
+
+
+Look at which sites are not predicted well with final fall model. I don't see a good reason to drop all of Stariski or the apu1 site.
+
+```{r}
+model.form <- model.form3
+model.data <- fall_meanT
+
+#loop for spatial cross-validation
+sites <- model.data %>% distinct(Site) %>% pull(Site)
+site.preds <- tibble()
+
+for(i in sites){
+  test.dat <- model.data %>% filter(Site == i)
+  train.dat <- model.data %>% filter(!Site == i)
+  fit <- lm(model.form, data = train.dat)
+  test.dat$preds <- predict(fit, newdata = test.dat)
+  site.preds <- bind_rows(site.preds, test.dat %>% select(Site, sampleDate, meanT, preds))
+}
+
+fall_meanT %>%
+  distinct(Site, cont_area) %>% 
+  right_join(site.preds) %>% 
+  group_by(Site, cont_area) %>% 
+  summarize(rmse = Metrics::rmse(meanT, preds)) %>% 
+  ggplot(aes(x = cont_area, y = rmse)) +
+  geom_point() +
+  geom_text(aes(label = Site))
+  
+  
+```
+
+
+```{r}
+fall_meanT %>% 
+  count(Site, year) %>% 
+  spread(key = year, value = n)
+```
+
+Effect size of precipitation on fall temperatures.
+
+```{r}
+
+fall.prcp <- ggpredict(fall.lm, terms  = "prcp5")
+
+plot(fall.prcp)
+
+summary(fall_meanT)
+
+fall_meanT %>% 
+  group_by(day) %>% 
+  summarize(prcp_mn = mean(prcp5),
+            prcp_sd = sd(prcp5)) %>% 
+  ggplot() +
+  geom_line(aes(x = day, y = prcp_mn)) +
+  geom_ribbon(aes(x = day, ymin = prcp_mn - prcp_sd, ymax = prcp_mn + prcp_sd), alpha = 0.1)
+```
+
+
+
+```{r}
+fall.swe <- ggpredict(fall.lm, terms  = c("sweA1", "day"))
+
+plot(fall.swe)
+
+```
+
+
+
+
+## GAM models
+
+Started by examining code used by Siegel and Volk in their paper and available on github.
+
+https://github.com/SouthForkResearch/TemperatureModels_Predictive/blob/master/Model_fitting_ALL_1.R
+
+Here is the code they used for spring and fall gam v. linear models:
+
+```{r}
+
+# m1gs <- (gam(AvgDailyTemp ~ s(TAVGn5dC, k = 4) +s(Tchange5C, k = 3)+s(A1Snow,by = JulianDate, k = 3)+s(catch_area, by = ae, k = 3)+s(catch_area, by = TAVGn5dC, k = 3)+s(catch_area, by = dailymeanCMS, k = 3)+s(ae, by = JulianDate, k = 3)+s(SLOPE, by = TAVGn5dC, k = 3)+s(Lake_perc, by = JulianDate, k = 3)+s(BFI, by = TAVGn5dC, k = 3)+ s(dailymeanCMS, by = TAVGn5dC, k = 3) + s(JulianDate, by = TAVGn5dC, k = 5)+ s(Echange2, by = TAVGn5dC, k = 3)+s(for_cover, by = TAVGn5dC, k = 3), data = data.day.sp))
+# summary(m1gs)
+# 
+# #Spring linear
+# m1gsL <- (lm(AvgDailyTemp ~ TAVGn5dC+Tchange5C+A1Snow*JulianDate+catch_area*ae+catch_area*TAVGn5dC+catch_area*dailymeanCMS+ae*JulianDate+SLOPE*TAVGn5dC+Lake_perc*JulianDate+dailymeanCMS*TAVGn5dC+JulianDate*TAVGn5dC+Echange2*TAVGn5dC+for_cover*TAVGn5dC, data = data.day.sp))
+# summary(m1gsL)
+# #fall model
+# m1gf <- (gam(AvgDailyTemp ~ s(TAVGn3dC, k = 5) +s(Tchange3C, k = 3)+s(SNWD,by = TAVGn3dC, k = 3)+s(catch_area, by = ae, k = 3)+s(catch_area, by = dailymeanCMS, k = 3)+s(ae, by = SNWD, k = 3)+s(catch_area, by = TAVGn3dC, k = 3)+s(ae, by = TAVGn3dC, k = 3)+s(Lake_perc, by = JulianDate, k = 3)+ s(dailymeanCMS, by = TAVGn3dC, k = 3)+ s(BFI, by = TAVGn3dC, k = 3)+ s(Echange2, by = TAVGn3dC, k = 3)+ s(JulianDate, k = 5), data = data.day.fl))
+# summary(m1gf)
+# 
+# m1gfL <- (lm(AvgDailyTemp ~ TAVGn3dC+Tchange3C+SNWD*TAVGn3dC+A1Snow*JulianDate+catch_area*ae+catch_area*TAVGn3dC+catch_area*dailymeanCMS+ae*JulianDate+ae*SNWD+SLOPE*TAVGn3dC+BFI*TAVGn3dC+Lake_perc*JulianDate+dailymeanCMS*TAVGn3dC+JulianDate*TAVGn3dC+Echange2*TAVGn3dC, data = data.day.fl))
+# summary(m1gfL)
+
+```
+
+Try adding gam smoothers to the spring linear model that performed best. The main problem with this model is that we are seeing improved prediction with swe, but the effect size is in the wrong direction (+).
+
+```{r}
+
+spring.gam <- gam(meanT ~ s(tair, k = 3) + s(slope_P, k = 3) + s(cont_area, k = 3) +  s(prcp, k = 3) 
+                  + s(swe, k = 3), data = spring_meanT)
+
+summary(spring.gam)
+
+sqrt(sum(((predict(spring.gam) - spring_meanT$meanT) ^ 2))/nrow(spring_meanT))
+
+plot(spring.gam)
+  
+
+```
+
+Compare to linear model.
+
+
+```{r}
+
+spring.lm <- lm(meanT ~ tair + slope_P + cont_area +  prcp + swe, data = spring_meanT)
+
+summary(spring.lm)
+
+sqrt(sum(((predict(spring.lm) - spring_meanT$meanT) ^ 2))/nrow(spring_meanT))
+
+visreg(spring.lm, "tair")
+visreg(spring.lm, "slope_P")
+visreg(spring.lm, "cont_area")
+visreg(spring.lm, "swe")
+visreg(spring.lm, "prcp")
+
+spring.resid <- lm(meanT ~ tair, data = spring_meanT) %>% resid
+plot(spring_meanT$slope_P, spring.resid)
+plot(spring_meanT$cont_area, spring.resid)
+plot(spring_meanT$prcp, spring.resid)
+plot(spring_meanT$swe, spring.resid)
+
+```
+
+Try a gam for the entire season.
+
+```{r}
+all.gam <- gam(meanT ~ s(tair, k = 5) + s(slope_P, k = 3) + s(cont_area, k = 3) +  s(prcp, k = 3) 
+                  + s(sweA1, k = 3), data = temp_meanT)
+
+summary(all.gam)
+
+sqrt((sum((predict(all.gam) - temp_meanT$meanT) ^ 2))/nrow(temp_meanT))
+
+plot(all.gam)
+visreg(all.gam, "tair")
+
+
+all.gam <- gam(meanT ~ s(tair, k = 5) + s(slope_P, k = 3) + s(cont_area, k = 3) + s(elev_mean, k = 3), data = temp_meanT)
+
+summary(all.gam)
+
+sqrt(sum(((predict(all.gam) - temp_meanT$meanT) ^ 2))/6049)
+
+
+```
+
+
+# SPRING Mixed Effects model
+
+Center the tair variable to fix multicollinearity with squared term.
+
+```{r}
+spring_meanT <- spring_meanT %>% 
+  mutate(tair3c = scale(tair3, scale = FALSE))
+```
+
+Compare fixed effects model with mixed effects model that includes 1) random intercept for huc12, and 2) random intercept and slopes by huc12.
+
+```{r}
+library(nlme)
+
+S1 <- gls(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland + 
+                  sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day, 
+                data = spring_meanT)
+
+S2 <- gls(meanT ~ tair3c + I(tair3c^2) + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland + 
+                  sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day, 
+                data = spring_meanT)
+
+S3 <- lme(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland + 
+                  sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day, random = ~1|HUC_name, 
+                data = spring_meanT)
+
+S4 <- lme(meanT ~ tair3 + day + prcp5 + sweA1 + 
+                  cont_area + reach_slope + rca_elev_mn + Wetland + 
+                  sweA1*day + rca_elev_mn*day + sweA1*Wetland + Wetland*day, random = ~tair3|HUC_name, 
+                data = spring_meanT)
+
+
+data.frame(AIC = AIC(S1, S2, S3, S4),
+           rmse = c(rmse(spring_meanT$meanT, predict(S1)),
+                    rmse(spring_meanT$meanT, predict(S2)),
+                    rmse(spring_meanT$meanT, predict(S3)),
+                    rmse(spring_meanT$meanT, predict(S4))))
+
+summary(S4)
+intervals(S4)
+random.effects(S4)
+
+temp %>% 
+  count(HUC_name)
+```
+
+Stepwise deletion based on AIC.
+
+```{r}
+library(MASS)
+
+S4.ml <- update(S4, method = "ML")
+S4.sel <- stepAIC(S4.ml)
+S4.sel$anova
+
+summary(S4.sel)
+```
+Look at interactions.
+
+```{r}
+library(sjPlot)
+
+plot_model(S4.sel, type = "int")
+plot_model(S4.sel, type = "pred", terms = "prcp5")
+```
+
+# Summer model - START HERE 7/7/20
+
+All copied over from Deshka script.
+First add scaled covars to temp.
+
+```{r}
+
+temp.dm <- temp %>% 
+  rename(jd = day, mean = meanT, catchment_elev_mn = rca_elev_mn) %>% 
+  mutate(tair3sc = sjmisc::std(tair3),
+         jdsc = sjmisc::std(jd),
+         sweA1sc = sjmisc::std(sweA1),
+         prcp5sc = sjmisc::std(prcp5),
+         reach_slopesc = sjmisc::std(reach_slope),
+         wetlandsc = sjmisc::std(Wetland),
+         catchment_elev_mnsc = sjmisc::std(catchment_elev_mn),
+         cont_areasc = sjmisc::std(cont_area)) 
+
+```
+
+Quick check on VIF for full model that will be used below.
+
+```{r}
+lm1 <- lm(mean ~ tair3sc + I(tair3sc^2) + jdsc + I(jdsc^2) + sweA1sc + prcp5sc + reach_slopesc +
+            wetlandsc + catchment_elev_mnsc + cont_areasc + season,
+          data = temp.dm, na.action = "na.fail")
+
+vif(lm1)
+```
+Try a pairplot to see what is driving high vif for jd. Squared term for jd is correlated to raw air temps. And, probably need to drop either catchment elevation or stream_slope.
+
+```{r}
+temp.dm %>% 
+  mutate(tair3sc.2 = tair3sc^2,
+         jdsc.2 = jdsc^2) %>% 
+  dplyr::select(tair3sc, tair3sc.2, jdsc, jdsc.2, sweA1sc, prcp5sc, reach_slopesc, wetlandsc,
+         catchment_elev_mnsc, cont_areasc) %>% 
+  pairs(upper.panel = panel.cor, lower.panel = panel.smooth)
+```
+
+Plot of air versus stream temperature by season.
+
+```{r}
+temp.dm %>% 
+  ggplot(aes(x = tair3, y = mean, color = season)) +
+  # geom_point() +
+  geom_smooth() 
+  facet_wrap(~season)
+```
+
+
+
+
+Full model with all interactions. Dropped interactions with jd because models were too complex. Select best random term before using cross-validation on all model subsets for prediction.
+
+
+```{r}
+
+M1 <- lm(mean ~ tair3sc + I(tair3sc^2) + jdsc + I(jdsc^2) + sweA1sc + prcp5sc + reach_slopesc +
+            wetlandsc + catchment_elev_mnsc + cont_areasc + season +
+            sweA1sc:wetlandsc + season:(tair3sc + I(tair3sc^2)),
+          data = temp.dm, na.action = "na.fail") 
+
+M2 <- lme(mean ~ tair3sc + I(tair3sc^2) + jdsc + I(jdsc^2) + sweA1sc + prcp5sc + reach_slopesc +
+            wetlandsc + catchment_elev_mnsc + cont_areasc + season +
+            sweA1sc:wetlandsc + season:(tair3sc + I(tair3sc^2)),
+          random = ~ 1|HUC_name, data = temp.dm, na.action = "na.fail") 
+
+M3 <- lme(mean ~ tair3sc + I(tair3sc^2) + jdsc + I(jdsc^2) + sweA1sc + prcp5sc + reach_slopesc +
+            wetlandsc + catchment_elev_mnsc + cont_areasc + season +
+            sweA1sc:wetlandsc + season:(tair3sc + I(tair3sc^2)), 
+          random = ~ 1 + tair3sc|HUC_name, data = temp.dm, na.action = "na.fail") 
+
+data.frame(AIC = AIC(M1, M2, M3),
+           rmse = c(rmse(temp.dm$mean, predict(M1)),
+           rmse(temp.dm$mean, predict(M2)),
+           rmse(temp.dm$mean, predict(M3))))
+
+summary(M2)
+
+intervals(M2, which = "fixed")
+
+
+#plot_model no long working
+plot_model(M2, type = "pred")
+plot_model(M2, type = "pred", terms = c("sweA1sc [all]", "wetlandsc [-1.5, 2.5]"))
+
+sjPlot::plot_model(M1, type = "int")
+
+
+
+
+```
+
+Test for plot_model, which I can't get to run on complex models above.
+
+```{r}
+test <- lm(mean ~ tair3sc*season + I(tair3sc^2)*season,
+          data = temp.dm, na.action = "na.fail")
+summary(test)
+
+test <- lm(mean ~ scale(tair3),
+          data = temp.dm, na.action = "na.fail")
+
+plot_model(test, type = "int")
+```
+
+
+
+Check assumptions and deal with pattern in residuals. NOT RUN RESIDS LOOK FINE.
+
+```{r}
+plot(x = predict(M2), y = resid(M2))
+plot(x = temp.dm$tair3sc, y = resid(M2))
+plot(x = temp.dm$HUC_name, y = resid(M2))
+plot(x = temp.dm$jdsc, y = resid(M2))
+plot(x = temp.dm$sweA1sc, y = resid(M2))
+plot(x = temp.dm$prcp5sc, y = resid(M2))
+plot(x = temp.dm$cont_areasc, y = resid(M2))
+plot(x = temp.dm$reach_slopesc, y = resid(M2))
+plot(x = temp.dm$wetlandsc, y = resid(M2))
+plot(x = temp.dm$catchment_elev_mnsc, y = resid(M2))
+plot(x = as.factor(temp.dm$season), y = resid(M2))
+
+vf3 <- varFixed(value = ~tair3)
+M3 <- update(M2, weights = vf3)
+
+AIC(M2,M3)
+
+rmse(temp.dm$mean, predict(M3))
+
+plot(x = predict(M3), y = resid(M3, type = "normalized"))
+plot(x = temp.dm$tair3sc, y = resid(M3, type = "normalized"))
+plot(x = temp.dm$prcp5sc, y = resid(M3, type = "normalized"))
+
+hist(resid(M3))
+
+plot_model(M3, type = "diag")
+plot(M3)
+
+
+pdf("output/Deshka global model marginal effect.pdf")
+plot_model(M3, type = "pred", terms = c("sweA1sc [all]", "wetlandsc [-1.5, 2.5]"))
+plot_model(M3, type = "pred", terms = c("tair3sc [all]", "season"))
+plot_model(M3, type = "pred", terms = c("jdsc [all]"))
+plot_model(M3, type = "pred", terms = c("prcp5sc [all]"))
+plot_model(M3, type = "pred", terms = c("reach_slopesc [all]"))
+plot_model(M3, type = "pred", terms = c("catchment_elev_mnsc [all]"))
+plot_model(M3, type = "pred", terms = c("cont_areasc [all]"))
+dev.off()
+
+```
+
+Plot observed v. fitted by site to see if there are large bias for some sites.
+
+```{r}
+
+temp.dm %>% 
+  mutate(resid = residuals(M2, level = 1)) %>% 
+  group_by(Site) %>% 
+  summarize(resid_mn = mean(resid)) %>% 
+  arrange(desc(resid_mn))
+
+sites <- temp.dm %>% distinct(Site) %>% pull(Site)
+
+pdf("output/Anchor global model obs-fitted by site.pdf")
+for(i in sites){
+  dat <- temp.dm %>% 
+    filter(Site == i)
+  dat <- dat %>% 
+    mutate(fitted = predict(M2, newdata = dat))
+  rmse <- rmse(dat$mean, dat$fitted)
+  p <- dat %>% 
+    ggplot() +
+    geom_point(aes(x = fitted, y = mean, color = season)) +
+    geom_abline(aes(slope = 1, intercept = 0)) +
+    coord_fixed(xlim = c(0, 22), ylim = c(0, 20)) +
+    theme_bw() +
+    labs(title = i) +
+    geom_text(aes(x = 10, y = 20, label = round(rmse, 2)))
+  print(p)
+}
+dev.off()
+
+```
+
+Dredge and AIC.
+
+```{r}
+M2.sel <- stepAIC(update(M2, method = "ML"))
+summary(M2.sel)
+anova(M2.sel)
+
+M2.dr <- dredge(M3, beta = "sd", fixed = "tair3sc")
+
+subset(M3.dr, delta < 10)
+
+model.avg(M3.dr, subset = cumsum(weight) < 0.95)
+summary(get.models(M3.dr, 1)[[1]])
+
+```
+
+Do 10 runs of 10-fold CV on top model.
+
+```{r}
+summer_xval_gl <- data.frame()
+
+num_folds <- 10
+sites <- temp.dm %>% distinct(site_ID) %>% pull(site_ID)
+
+for(i in 1:10) {
+  folds <- createFolds(sites, k = num_folds, list = TRUE, returnTrain = TRUE)
+  folds[[11]] <- 1:79
+  names(folds)[11] <- "Fold11" 
+  for(j in 1:11) {
+    train_sites <- sites[folds[[j]]]
+    test_sites <- sites[-folds[[j]]]
+    train <- subset(temp.dm, site_ID %in% train_sites)
+    test <- subset(temp.dm, site_ID %in% test_sites)
+    fit <- update(M3, data = train)
+    new_row <- data.frame(run = i, xval_num = j, MAE = mean(abs(residuals(fit, level = 1))),
+                          RMSE = sqrt(mean(residuals(fit, level = 1)^2)))
+    summer_xval_gl <- bind_rows(summer_xval_gl, new_row)
+  }
+}
+
+summer_xval_gl %>% 
+  ggplot(aes(x = as.factor(run), y = xval_num)) +
+  geom_boxplot()
+
+summer_xval_gl %>%
+  group_by(run) %>% 
+  summarize(se_MAE = mean(MAE)/sqrt(11),
+            se_RMSE = mean(RMSE)/sqrt(11))
+  
+```
+
+
+Try dredging all summer models from global model, which was by far the best using AIC and dredge. 
+
+```{r}
+
+M3.models <- dredge(M3, evaluate = FALSE, beta = TRUE, fixed = c("tair3sc"))
+
+summer_xval_dredge <- data.frame()
+
+folds <- createFolds(sites, k = num_folds, list = TRUE, returnTrain = TRUE)
+folds[[11]] <- 1:79
+names(folds)[11] <- "Fold11" 
+
+
+for(i in 1:length(M3.models)) {
+  for(j in 1:11) {
+    train_sites <- sites[folds[[j]]]
+    test_sites <- sites[-folds[[j]]]
+    train <- subset(temp.dm, site_ID %in% train_sites)
+    test <- subset(temp.dm, site_ID %in% test_sites)
+    fit <- update(eval(M3.models[[i]]), data = train)
+    new_row <- data.frame(model_form = format(M3.models[[i]]), model_num = i, xval_num = j, MAE = mean(abs(residuals(fit, level = 1))),
+                          RMSE = sqrt(mean(residuals(fit, level = 1)^2)))
+    summer_xval_dredge <- bind_rows(summer_xval_dredge, new_row)
+  }
+}
+
+
+
+```
+
+
+BELOW NOT RUN - ONCE MODELS ARE COLLAPSED TO A SINGLE LINE, THE TOTAL ROWS IS 14568, NEED 1920*11 = 21120 TOTAL ROWS SO ONLY HALFWAY. RUN OVERNIGHT AFTER CHECKING WITH LESLIE ON GLOBAL MODEL AND FINAL SET OF INTERACTIONS.
+
+```{r}
+#note model calls got split across rows, merge them together
+summer_xval_dredge2 <- summer_xval_dredge %>% 
+  group_by(model_num, xval_num, MAE, RMSE) %>% 
+  summarize(model_form = paste(model_form, collapse = "")) %>% 
+  ungroup()
+
+spring_xval_dredge2 %>% 
+  ggplot() +
+  geom_boxplot(aes(y = MAE))
+
+#get rid of all white spaces for cleaning up function call
+
+spring_xval_dredge2 <- spring_xval_dredge2 %>% 
+  mutate(model_form = gsub(" ", "", model_form, fixed = TRUE))
+
+
+#remove first part of lme function call
+spring_xval_dredge2 <- spring_xval_dredge2 %>% 
+  mutate(covars = str_replace(model_form, "^lme.formula\\(fixed=mean~", ""))
+
+#remove last part of lme function call
+spring_xval_dredge2 <- spring_xval_dredge2 %>% 
+  mutate(covars = str_replace(covars, ",data=spring,random=\\~1\\|HUC12,na.action=\"na.fail\"\\)", ""))
+
+#add in number of parameters
+spring_xval_dredge2 <- spring_xval_dredge2 %>% 
+  mutate(parm_ct = sapply(strsplit(spring_xval_dredge2$covars, "\\+"), length))
+
+spring_xval_dredge2 
+
+spring_xval_summ <- spring_xval_dredge2 %>% 
+  group_by(model_num, covars, parm_ct) %>% 
+  summarize(mean_MAE = mean(MAE),
+            mean_RMSE = mean(RMSE)) %>% 
+  ungroup()
+
+spring_xval_summ %>% 
+  ggplot() +
+  geom_boxplot(aes(x = as.factor(parm_ct), y = mean_MAE))
+
+spring_xval_summ %>% 
+  ggplot() +
+  geom_boxplot(aes(x = as.factor(parm_ct), y = mean_RMSE))
+
+
+spring_xval_summ %>% 
+  select(parm_ct:mean_RMSE) %>% 
+  group_by(parm_ct) %>%
+  summarize_each(funs(mean, sd, se = sd(.)/sqrt(n())), mean_MAE:mean_RMSE) %>% 
+  ggplot() +
+  geom_point(aes(x = as.factor(parm_ct), y = mean_MAE_mean)) +
+  geom_linerange(aes(x = as.factor(parm_ct), ymin = mean_MAE_mean - mean_MAE_se, ymax = mean_MAE_mean + mean_MAE_se))
+
+spring_xval_summ %>% 
+  filter(parm_ct == 5, mean_MAE < 1.00) %>% 
+  arrange(desc(mean_RMSE))
+
+```
+
+

@@ -8,13 +8,14 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
 
+library(ggpmisc)
 library(lubridate)
 library(rgdal)
 library(zoo)
 library(sf)
 library(corrplot)
 library(MuMIn)
-library(ape)
+# library(ape)
 library(readxl)
 #library(VIF)
 library(gridExtra)
@@ -23,10 +24,10 @@ library(tidyverse)
 ```
 
 # Database for Anchor Model
-Load data frame from 1_Create model data frame.Rmd
+Load data frame from 1_Create model data frame.Rmd. Use the full data frame that has 8-day daymet and also lst for comparisons. We will be using a different one for modeling that has already been saved: 3-day dayment and 5-day summed precipitation.
 
 ```{r}
-load(file = "output/temp.Rdata")
+load(file = "output/temp.dm2.Rdata")
 
 ```
 
@@ -34,15 +35,20 @@ load(file = "output/temp.Rdata")
 ## Compare LST versus daymet air temperatures
 
 See correlation between lst and daymet.
-Test models of stream temp with each.
+Test models of stream temp with each. This is for the 8day daymet air temps.
 
 ```{r}
 
-cor(temp$lst, temp$tair3, use = "pairwise.complete.obs")
+cor(temp.dm2$lst, temp.dm2$tair, use = "pairwise.complete.obs")
 
-temp %>% 
+temp.dm2 %>% 
+  filter(!is.na(lst)) %>% 
+  mutate(diff = lst - tair) %>% 
+  summarize(mean(diff), sd(diff))
+
+temp.dm2 %>% 
   ggplot() +
-  geom_point(aes(x = tair3, y = lst)) +
+  geom_point(aes(x = tair, y = lst)) +
   geom_abline(slope = 1, intercept = 0) +
   scale_x_continuous(limits = c(0, 25)) +
   scale_y_continuous(limits = c(0, 25)) +
@@ -54,35 +60,55 @@ temp %>%
 Look at correlations between each air temperature covariate with stream temperature and also predictors of stream temperature.
 
 ```{r}
-temp %>% 
-  filter(!is.na(lst)) %>% 
-  summarize(clst = cor(lst, meanT),
-            cdm3 = cor(tair3, meanT),
-            cdm8 = cor(tair, meanT))
+temp.dm2 %>% 
+  filter(!is.na(lst), !is.na(ma_mean)) %>% 
+  summarize(clst = cor(lst, ma_mean),
+            cdm8 = cor(tair, ma_mean))
 
 
-lm1 <- lm(meanT ~ tair3, data = temp %>% filter(!is.na(lst)))
-lm2 <- lm(meanT ~ tair, data = temp %>% filter(!is.na(lst)))
-lm3 <- lm(meanT ~ lst, data = temp %>% filter(!is.na(lst)))
-AIC(lm1, lm2, lm3)
+lm1 <- lm(ma_mean ~ tair, data = temp.dm2 %>% filter(!is.na(lst)))
+lm2 <- lm(ma_mean ~ lst, data = temp.dm2 %>% filter(!is.na(lst)))
+AIC(lm1, lm2)
 
 summary(lm1)
 summary(lm2)
+
 ```
+
+Visualize differences
+
+```{r}
+
+temp.dm2 %>% 
+  filter(!is.na(lst), !is.na(ma_mean)) %>% 
+  select(Site, sampleDate, month, meanT, tair, lst) %>% 
+  pivot_longer(cols = tair:lst, names_to = "air_var", values_to = "value") %>% 
+  mutate(air_varf = factor(air_var, labels = c("LST", "8-day Daymet"))) %>% 
+  ggplot(aes(x = value, y = meanT, color = as.factor(month))) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0) +
+  facet_wrap(~air_varf, nrow = 3) +
+  stat_poly_eq(formula = y ~ x, parse = TRUE) +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  labs(x = "Air Temperature Covariates ", y = "Mean ")
+
+```
+
 
 
 ## Compare 3-day and 8-day daymet air temperatures
 
-This comparison is slightly different from the one above because now we are using all daily stream temperatures. For the LST comparison, we could only use every 8 days to make the data comparable.
+This comparison is slightly different from the one above because now we are using all daily stream temperatures. 
 
 ```{r}
-temp %>% 
+temp.dm2 %>% 
   summarize(cdm8 = cor(tair, meanT),
             cdm3 = cor(tair3, meanT))
 
 
-lm1 <- lm(meanT ~ tair3, data = temp)
-lm2 <- lm(meanT ~ tair, data = temp)
+lm1 <- lm(meanT ~ tair3, data = temp.dm2)
+lm2 <- lm(meanT ~ tair, data = temp.dm2)
 AIC(lm1, lm2)
 
 summary(lm1)
@@ -110,10 +136,17 @@ Spatial covariates first.
 
 ```{r}
 
-temp %>% 
+temp.dm2 %>% 
   distinct(reach_slope, reach_length, Forest, Shrub, Wetland, Riparian, 
            rca_elev_min, rca_elev_max, rca_elev_mn, 
-           ca_elev_mn, cont_area, elev_delta, sweA1) %>% 
+           ca_elev_mn, cont_area) %>% 
+  cor(.) %>% 
+  corrplot.mixed(.)
+
+#list to match deshka model
+temp.dm2 %>% 
+  distinct(reach_slope, Forest, Shrub, Wetland, 
+           rca_elev_mn, ca_elev_mn, cont_area) %>% 
   cor(.) %>% 
   corrplot.mixed(.)
 
@@ -122,7 +155,8 @@ temp %>%
 
 
 
-## Exploratory Graphs
+## Exploratory Graphs 
+Nothing below has been run/updated, 8/24/20.
 
 ### Correlation between LST and air temperature by month
 ```{r, echo=FALSE, warnings = FALSE}

@@ -1,0 +1,897 @@
+---
+title: "4_figures and tables"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+library(nlme)
+library(rgdal)
+library(sf)
+library(lubridate)
+library(ggpmisc)
+# library(ggpubr)
+library(sjPlot)
+library(grid)
+library(gridExtra)
+library(tidyverse)
+```
+
+# Figure 1 - map of sites from ArcGIS
+
+Could color sites by cross-validation subsets?
+
+# figure 2 temperature index
+
+Load temp.dm.may data frame with May data in it.
+
+```{r}
+load(file = "output/temp.dm.may.Rdata")
+```
+
+``` {r eval = FALSE}
+temp.dm.may %>% 
+  mutate(mo.day = format(sampleDate, "%m-%d")) %>% 
+  ggplot(aes(x = as.Date(mo.day, format = "%m-%d"), y = index, group = Site)) +
+  # geom_point() +
+  geom_line() +
+  scale_x_date(limits = c(as.Date("05-01", format = "%m-%d"), as.Date("06-30", format = "%m-%d"))) +
+  facet_wrap(~year) +
+  scale_y_continuous(limits = c(-5,5))
+```
+
+``` {r eval = FALSE}
+temp.dm.may %>% 
+  filter(Site == "CIK14") %>% 
+  mutate(mo.day = format(sampleDate, "%m-%d")) %>% 
+  ggplot(aes(x = as.Date(mo.day, format = "%m-%d"), y = index, color = as.factor(year))) +
+  # geom_point() +
+  geom_line() +
+  scale_x_date(limits = c(as.Date("05-01", format = "%m-%d"), as.Date("06-30", format = "%m-%d"))) +
+  scale_y_continuous(limits = c(-5,5))
+```
+
+
+(plot similar to Letcher et al. so readers understand temp index.)
+
+Figure 2. Example of mean daily stream temperatures (black) and air temperatures (red) for the mainstem Anchor River below the confluence of the north and south forks (CIK14) in 2008 and 2014 (top panel). Temperature index values for the same site and years are shown in the bottom panel with deviations in May indicating a poor relationship between air and stream temperatures.
+
+```{r}
+# temp.dm.may %>% 
+#   filter(month(Date) == 5) %>% 
+#   group_by(site_ID) %>% 
+#   summarize(mi = mean(index)) %>% 
+#   arrange(desc(mi))
+
+p1 <- temp.dm.may %>% 
+  filter(Site == "CIK14", year %in% c(2008, 2014)) %>% 
+  mutate(mo.day = format(sampleDate, "%m-%d")) %>% 
+  ggplot() +
+  geom_line(aes(x = as.Date(mo.day, format = "%m-%d"), y = meanT, group = Site)) +
+  geom_line(aes(x = as.Date(mo.day, format = "%m-%d"), y = tair3, group = Site), color = "red") +
+  # scale_x_date(limits = c(as.Date("05-01", format = "%m-%d"), as.Date("06-30", format = "%m-%d"))) +
+  facet_wrap(~year) +
+  theme_bw() +
+  theme(axis.title.x = element_blank()) +
+  labs(y = "Temperature (°C)")
+
+p2 <- temp.dm.may %>% 
+  filter(Site == "CIK14", year %in% c(2008,2014)) %>% 
+  mutate(mo.day = format(sampleDate, "%m-%d")) %>% 
+  ggplot(aes(x = as.Date(mo.day, format = "%m-%d"), y = index, group = Site)) +
+  geom_point() +
+  # geom_line() +
+  # scale_x_date(limits = c(as.Date("05-01", format = "%m-%d"), as.Date("06-30", format = "%m-%d"))) +
+  facet_wrap(~year) +
+  scale_y_continuous(limits = c(-5,5)) +
+  theme_bw() +
+  theme(axis.title.x = element_blank()) +
+  labs(y = "Temperature Index")
+
+grid.arrange(p1, p2, nrow = 2)
+
+```
+
+
+
+# Fig 3 descriptive model figures
+
+Load descriptive model, top model in aic model selection (took out precip and season:tair^2).
+
+```{r eval = FALSE}
+load(file = "output/anchor.M3.RData")
+```
+
+[CURRENTLY NOT RUN HAVING PROBLEMS WITH SJPLOT]
+
+Figure 3. Effect sizes for global model of mean daily stream temperatures for the Deshka watershed. A shows the season by air temperature interaction and hysteresis in the fall, B shows the seasonal effect of julian date, and C shows the importance of wetlands for contributing cold water when spring snowpack is high. 
+
+```{r eval = FALSE}
+plot_model(anchor.M3)
+plot_model(anchor.M3, type = "pred", terms = c("tair3c", "season"))
+plot_model(anchor.M3, type = "pred", terms = c("jdc", "season [spring]"))
+plot_model(anchor.M3, type = "pred", terms = c("jdc [all]", "season"))
+plot_model(anchor.M3, type = "pred", terms = c("catchment_elev_mnc", "season"))
+plot_model(anchor.M3, type = "pred", terms = c("cont_areac", "season"))
+plot_model(anchor.M3, type = "pred", terms = c("sweA1c", "wetlandc [-20, 20]"))
+
+```
+
+
+
+```{r eval = FALSE}
+load(file = "output/temp.dm.Rdata")
+
+tair3_mn <- attr(temp.dm.cen$tair3c, "scaled:center")
+
+brks <- c(-15, -10, -5, 0, 5, 10)
+lbls <- round(brks + tair3_mn, 1)
+
+
+p1 <- plot_model(M3, type = "pred", terms = c("tair3c", "season")) +
+  theme_bw() +
+  scale_x_continuous(breaks = brks, labels = lbls) +
+  labs(x = "Air Temperature (°C)", y = "Stream Temperature (°C)", title = "") +
+  theme(legend.position = "bottom") +
+  geom_text(aes(x = -15, y = 20, label = "A"), color = "black")
+
+jd_mn <- attr(temp.dm$jdc, "scaled:center")
+
+brks <- c(-40, 0, 40)
+lbls <- round(brks + jd_mn, 0)
+
+p2 <- plot_model(M3, type = "pred", terms = c("jdc [all]")) +
+  theme_bw() +
+  scale_x_continuous(breaks = brks, labels = lbls) +
+  labs(x = "Julian Day", y = "Stream Temperature (°C)", title = "") +
+  theme(legend.position = "bottom") +
+  geom_text(aes(x = -60, y = 16, label = "B"), color = "black")
+
+wetland_mn <- attr(temp.dm$wetlandc, "scaled:center")
+swe_mn <- attr(temp.dm$sweA1c, "scaled:center")
+
+brks <- c(-100, 0, 100, 200)
+lbls <- round(brks + swe_mn, 0)
+
+p3 <- plot_model(M3, type = "pred", terms = c("sweA1c", "wetlandc [-40, 60]")) +
+  theme_bw() +
+  scale_x_continuous(breaks = brks, labels = lbls) +
+  scale_color_discrete(name = "Wetland Riparian Cover (%)", breaks = c("-40", "60"), labels = c("0", "100")) +
+  labs(x = "April 1st Snow Water Equivalent (mm)", y = "Stream %emperature (°C)", title = "") +
+  theme(legend.position = "bottom") +
+  geom_text(aes(x = -100, y = 16, label = "C"), color = "black")
+
+grid.arrange(p1, p2, p3, nrow = 2)
+
+```
+
+
+# figure 4 cross-validation results
+
+Load results
+
+```{r}
+load(file = "output/summer_xval_dredge.RData")
+```
+
+
+```{r eval = FALSE}
+summer_xval_dredge
+
+p1 <- summer_xval_dredge %>% 
+  group_by(model_num, fixed_eff_ct) %>% 
+  summarize(mean_mae = mean(mae), mean_rmse = mean(rmse)) %>% 
+  ggplot() +
+  geom_jitter(aes(x = fixed_eff_ct, y = mean_mae)) 
+
+p2 <- summer_xval_dredge %>% 
+  group_by(model_num, fixed_eff_ct) %>% 
+  summarize(mean_mae = mean(mae), mean_rmse = mean(rmse)) %>% 
+  ggplot() +
+  geom_jitter(aes(x = fixed_eff_ct, y = mean_rmse)) 
+
+grid.arrange(p1,p2)
+```
+
+Figure 4. Model cross-validation error versus model complexity, as determined by the number of fixed effects in the model. For each model, the mean root mean squared error (RMSE) is shown across 9 cross-validation subsets. Mean RMSE was minimized for a model with nine fixed effects, but similar cross-validation error was obtained for a simpler model with only five fixed effects.
+
+```{r}
+summer_xval_dredge %>% 
+  group_by(model_num, fixed_eff_ct) %>% 
+  summarize(mean_mae = mean(mae), mean_rmse = mean(rmse)) %>% 
+  ggplot() +
+  geom_jitter(aes(x = fixed_eff_ct, y = mean_rmse)) +
+  theme_bw() +
+  labs(x = "Model Complexity", y = "Mean RMSE")
+```
+
+# figure 5 boxplot of rmse by xval group
+
+Figure 5. Boxplots of prediction errors for all possible models by cross-validation subset. RMSE = root mean squared error.
+
+```{r}
+summer_xval_dredge %>% 
+  ggplot() +
+  geom_boxplot(aes(x = factor(xval_grp), y = rmse)) +
+  theme_bw() +
+  labs(x = "Cross-Validation Subset", y = "RMSE")
+  
+```
+# Summary tables for descriptive and predictive models
+
+Descriptive model selected by AIC.
+
+```{r}
+load(file = "output/anchor.M3.RData")
+
+tab_model(anchor.M3, digits = 4)
+```
+
+Predictive model selected by cross-validation error.
+
+```{r}
+load(file = "output/anchor_pm.RData")
+
+tab_model(anchor_pm, digits = 4)
+```
+
+
+
+# Thermal metrics for historic data
+
+Import metrics file and spatial data for species by catchment.
+
+```{r}
+load(file = "output/mets.Rdata")
+load(file = "output/cat_spp.Rdata")
+```
+
+merge.
+
+```{r}
+mets_spp <- left_join(mets %>% ungroup(), cat_spp)
+
+mets_spp <- mets_spp %>% 
+  mutate(decade = case_when(year > 1979 & year < 1990 ~ "1980s",
+                            year > 1989 & year < 2000 ~ "1990s",
+                            year > 1999 & year < 2010 ~ "2000s",
+                            year > 2009 & year < 2020 ~ "2010s"))
+
+mets_spp <- mets_spp %>% 
+  mutate(MA7d_DAT_jd = as.numeric(MA7d_DAT_jd),
+         MxDAT_jd = as.numeric(MxDAT_jd),
+         Riparian = as.numeric(Riparian))
+```
+
+
+Time series of mean july temperature for each year averaged for each subwatershed. Not very interesting.
+
+```{r}
+
+mets_spp %>% 
+  group_by(HUC_name, year) %>% 
+  summarize(July_mn_huc = mean(July_mn)) %>% 
+  ggplot(aes(x = year, y = July_mn_huc, group = HUC_name)) +
+  geom_point() +
+  geom_line()
+
+```
+
+
+Distributions of decadal average mean july temperature by catchment.
+
+```{r eval = FALSE}
+mets_spp %>% 
+  group_by(decade, reach_id) %>% 
+  summarize(mnJ = mean(July_mn)) %>% 
+  ggplot() +
+  geom_histogram(aes(x = mnJ)) +
+  facet_wrap(~decade) +
+  theme_bw()
+
+#example code
+ggdensity(wdata, x = "weight",
+   add = "mean", rug = TRUE,
+   color = "sex", fill = "sex",
+   palette = c("#0073C2FF", "#FC4E07"))
+```
+
+
+# Figure 6 distribution of mean july temperatures by decade for historical data
+
+Figure 6. Distributions of mean July temperature by decade for all catchments in the Anchor-Stariski watersheds. Vertical dashed lines indicate the average of mean July temperatures by decade across all catchments.
+
+```{r}
+mu <- mets_spp %>% 
+  group_by(decade, reach_id) %>% 
+  summarize(mnJ = mean(July_mn)) %>% 
+  group_by(decade) %>%
+  summarise(grp.mean = mean(mnJ))
+
+mets_spp %>% 
+  group_by(decade, reach_id) %>% 
+  summarize(mnJ = mean(July_mn)) %>% 
+  ggplot() +
+  geom_density(aes(x = mnJ, y = ..count.., fill = decade), alpha = 0.4) +
+  geom_vline(aes(xintercept = grp.mean, color = decade), data = mu, linetype = "dashed") +
+  theme_bw() +
+  scale_fill_discrete(name = "Decade") +
+  scale_color_discrete(guide = FALSE) +
+  labs(x = "Mean July Temperature (°C)", y = "Count of Catchments") +
+  theme(legend.position = "bottom") 
+
+```
+
+Why is there so little change across decades? NOAA data indicates 0.6 F increase/decade for kenai pen borough. 0.6 * 3 = 1.8 over 30 years. 1.8 * 5/9 = 1 deg C change. The air temp coefficient is ~ 0.8 so that would be 0.8 deg C change on average. 
+
+```{r}
+load(file = "output/new_data.Rdata")
+```
+
+Check air temperature to see if it is increasing over the 30-year period, like the NOAA data indicate (1 deg C change from 1980-2020). Use rca_id = 932, outlet of Anchor. Looks accurate.
+
+```{r}
+new_data %>% 
+  filter(reach_id == 932, month(date_day3) == 7) %>%
+  group_by(year) %>% 
+  summarize(mn_air = mean(tair3)) %>% 
+  ggplot(aes(x = year, y = mn_air)) +
+  geom_point() +
+  geom_smooth()
+  
+```
+
+Did snow pack increase over the same 30 years? Yes, this could be offsetting the air temperature increases given that both are in the predictive model.
+
+```{r}
+new_data %>% 
+  distinct(year, reach_id, sweA1) %>% 
+  group_by(year) %>% 
+  summarize(swe_mn = mean(sweA1)) %>% 
+  ggplot(aes(x = year, y = swe_mn)) +
+  geom_point() +
+  geom_smooth()
+
+
+```
+
+Plot them together to see if snowpack was high during warm years. First plot is scaled data of average air temperature and average swe across the entire watershed by year. Blue is swe and black is air temperature. Second plot is a pairplot of the two sets of scaled data, no real relationship between mean July temperatures and april snowpack, which makes sense.
+
+```{r}
+swe_ts <- new_data %>% 
+  distinct(year, reach_id, sweA1) %>% 
+  group_by(year) %>% 
+  summarize(swe_mn = mean(sweA1)) %>% 
+  mutate(swe_mn_sc = scale(swe_mn))
+
+tair_ts <- new_data %>% 
+  filter(month(date_day3) == 7) %>%
+  group_by(year) %>% 
+  summarize(air_mn = mean(tair3)) %>% 
+  mutate(air_mn_sc = scale(air_mn))
+
+ggplot() +
+  geom_point(aes(x = year, y = air_mn_sc), data = tair_ts) +
+  geom_point(aes(x = year, y = swe_mn_sc), data = swe_ts, color = "blue") +
+  geom_line(aes(x = year, y = air_mn_sc), data = tair_ts) +
+  geom_line(aes(x = year, y = swe_mn_sc), data = swe_ts, color = "blue")
+
+
+left_join(tair_ts, swe_ts) %>% 
+  ggplot(aes(x = swe_mn_sc, y = air_mn_sc, color = year)) +
+  geom_point()
+  
+```
+
+
+
+
+# figure 7 time series of metrics by year for historic data
+
+Figure 7. Change in thermal regime metrics from 1980 to 2018. Metric values were calculated for each catchment and year and averaged across all catchments by year. See Table 1 for metric definitions and units.
+
+```{r}
+
+mets_mns <- mets_spp %>% 
+  dplyr::select(reach_id:MA7d_DAT_jd) %>% 
+  pivot_longer(cols = June_mn:MA7d_DAT_jd, names_to = "metric", values_to = "value") %>% 
+  mutate(metricf = factor(metric, levels = c("June_mn", "July_mn", "Aug_mn", "Sep_mn",
+                                             "MxDAT", "MA7d_DAT", "MxDAT_jd", "MA7d_DAT_jd",
+                                             "CDD", "Range", "Var", "Sum_13_JAS", "Sum_18_JJAS"))) %>% 
+  group_by(metricf, year) %>% 
+  summarize(mean = mean(value),
+            median = mean(value)) %>% 
+  as.data.frame()
+
+
+my.formula <- y ~ x
+
+ggplot(aes(x = year, y = mean), data = mets_mns) +
+  geom_line() +
+  geom_smooth(method = "lm", formula = my.formula, se = F) +
+  facet_wrap(~ metricf, scales = "free_y") +
+  theme_bw() +
+  labs(x = "Year", y = "Metric Value") 
+  # stat_poly_eq(aes(label = paste(stat(eq.label))), label.x = "right", label.y = "bottom",
+  #              formula = formula, parse = TRUE, size = 3) +
+  # stat_fit_glance(method = 'lm', method.args = list(formula = my.formula), geom = 'text',
+  #                 aes(label = paste("p-value = ", signif(..p.value.., digits = 2), sep = "")),
+  #                 label.x = "left", label.y = "top", size = 3, hjust = 0)
+
+
+# ggsave("output/metric change over time.pdf", width = 10, height = 8)
+```
+
+Rate of change for each metric over time (copied over to table in the report).
+
+```{r }
+
+mets_lms <- lmList(mean ~ year | metricf, data = mets_mns, pool = FALSE) %>% summary
+mets_lms
+
+write.csv(mets_lms$coefficients, file = "output/metrics_linear_change.csv")
+
+# lm(mean ~ year, data = mets_mns %>% filter(metricf == "MxDAT")) %>% summary
+```
+
+# Figure 8 dotplot of mean july temperatures by year
+
+Figure 8. Mean July temperatures by year across the Anchor-Stariski watershedw. Points indicate the average across all catchments for each year and error bars indicate the standard deviation across all catchments. 
+
+```{r}
+
+mets_spp %>% 
+  group_by(year) %>% 
+  summarize(mwmt = mean(MA7d_DAT), sd = sd(MA7d_DAT)) %>% 
+  mutate(yearf = factor(year)) %>% 
+  ggplot() +
+  geom_errorbar(aes(xmin = mwmt - sd, xmax = mwmt + sd, y = fct_reorder(yearf, mwmt)), color = "dark gray") +
+  geom_point(aes(x = mwmt, y = fct_reorder(yearf, mwmt))) +
+  theme_bw() +
+  labs(x = "Maximum 7-Day Moving Average of Mean Daily Temperatures (°C)", y = "Year")
+```
+
+
+```{r eval = FALSE}
+#2008 as a cold year and 2004 as a warm year.
+mets_spp %>% 
+  group_by(year) %>% 
+  summarize(mwmt = mean(MA7d_DAT)) %>% 
+  filter(year %in% c(2008, 2004))
+
+mets_spp %>% 
+  filter(year == 2004) %>% 
+  group_by(year) %>% 
+  summarize(range(MA7d_DAT))
+
+mets_spp %>% 
+  filter(year == 2004) %>% 
+  group_by(year) %>% 
+  summarize(range(MA7d_DAT_jd))
+```
+
+# Figure 9 map of mean july temperature across network during a warm and cold year.
+
+```{r }
+
+fgdb <- "W:/GIS/Anchor/Anchor_spatial.gdb"
+# List all feature classes in a file geodatabase
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+
+# Read the feature class
+
+fl <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_03112020")
+fl <- st_zm(fl)
+fl <- fl %>% st_transform(4326)
+
+cat <- sf::st_read(dsn = fgdb, layer = "anchor_rcas_attributed_06022020")
+cat <- st_zm(cat)
+cat<- cat %>% st_transform(4326)
+
+#merge scenario metrics to catchments.
+cat_mets_hist <- left_join(cat, mets_spp %>% filter(year %in% c(2004, 2008)) %>% dplyr::select(reach_id:MA7d_DAT_jd), by = c("rca_id" = "reach_id")) 
+
+```
+
+Figure 9. Differences in maximum 7-day moving average of mean daily temperatures across the Anchor-Stariski watersheds in a cold and warm year. Average maximum 7-day moving average of mean daily temperatures across all catchments was 12.9 C in 2004 and 8.4 C in 2008.  
+
+```{r}
+
+ggplot() +
+  geom_sf(aes(fill = MA7d_DAT), data = cat_mets_hist, color = NA) +
+  # geom_sf(data = fl) +
+  facet_wrap(~year) +
+  theme_bw() +
+  scale_fill_distiller(type = "div", palette = "Spectral") +
+  scale_x_continuous(breaks = c(-150.2, -150.4, -150.6)) +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1))
+
+
+```
+
+
+# figure 10 closer inspection of daily temps in cold and warm years
+
+Figure 10. Mean daily temperatures in 2004 (a warm year) and 2008 (a cold year). Gray lines are mean daily temperatures across all catchments and black lines are average mean daily temperatures across the watershed. The red ribbon indicates optimal temperatures for juvenile rearing (12 - 15°C).
+
+```{r}
+load(file = "output/preds.Rdata")
+
+mn_temps <- preds %>% 
+  filter(year %in% c(2004, 2008)) %>% 
+  mutate(jd = format(date, "%j")) %>% 
+  group_by(jd, year) %>% 
+  summarize(mn_temp = mean(predict.HUC_name)) %>% 
+  mutate(jd = as.numeric(jd))
+
+daily_temps <- preds %>% 
+  filter(year %in% c(2004, 2008)) %>% 
+  mutate(ymax = 15, ymin = 12,
+         jd = as.numeric(format(date, "%j")))
+
+ggplot() +
+  geom_line(data = daily_temps, aes(x = jd, y = predict.HUC_name, group = reach_id), color = "gray") +
+  geom_line(data = mn_temps, aes(x = jd, y = mn_temp)) +
+  geom_ribbon(data = daily_temps, aes(x = jd, ymin = ymin, ymax = ymax), fill = "red", alpha = 0.2) +
+  facet_wrap(~year) +
+  theme_bw() +
+  labs(x = "Julian Day", y = "Predicted Mean Daily Temperatures (°C)")
+
+
+```
+
+
+
+# Future scenarios
+
+Import metrics for baseline and two future scenarios.
+
+```{r}
+load(file = "output/mets_fut.RData")
+```
+
+Not very interesting to see the exact same distributions shifted, this can be communicated easily in a table.
+
+```{r}
+mu <- mets_fut %>%
+  group_by(scenario) %>% 
+  summarize(mean_sc = mean(July_mn)) 
+
+mets_fut %>% 
+  ggplot() +
+  geom_density(aes(x = July_mn, y = ..count.., fill = scenario), alpha = 0.4) +
+  geom_vline(aes(xintercept = mean_sc, color = scenario), data = mu, linetype = "dashed") +
+  theme_bw() +
+  scale_fill_discrete(name = "Scenario") +
+  scale_color_discrete(guide = FALSE) +
+  labs(x = "Mean July Temperature (°C)", y = "Count of Catchments") +
+  theme(legend.position = "bottom") 
+
+```
+
+Summarize change in each metric across all catchments in a table.
+
+```{r}
+mets_fut_tbl <- mets_fut %>% 
+  pivot_longer(cols = June_mn:MA7d_DAT, names_to = "metric", values_to = "value") %>% 
+  group_by(scenf, metric) %>% 
+  summarize(mean = round(mean(value), 1)) %>% 
+  pivot_wider(names_from = scenf, values_from = mean) 
+
+mets_fut_tbl
+
+write.csv(mets_fut_tbl, file = "output/Future metric change table.csv")
+
+```
+
+Try mapping baseline and futures in R to see where the coldwater refugia are.
+
+
+# Figure 11 map of mean july temp by scenario.
+
+Figure 11. Mean July temperatures across catchments in the Deshka watershed under a baseline (2000-2019) and two future scenarios.
+
+```{r}
+
+cat_mets_fut <- left_join(cat, mets_fut, by = c("rca_id" = "reach_id")) 
+  
+
+ggplot() +
+  geom_sf(aes(fill = MA7d_DAT), data = cat_mets_fut, color = NA) +
+  # geom_sf(data = fl) +
+  facet_wrap(~scenf, nrow = 3) +
+  theme_bw() +
+  scale_fill_distiller(type = "div", palette = "Spectral") +
+  scale_x_continuous(breaks = c(-150.2, -150.4, -150.6)) +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1))
+
+
+```
+
+
+
+# Salmon figures
+
+
+# Figure 12 mean july temps by species and decade
+
+Summarize data for figure.
+
+```{r}
+mets_July_dec_mn <- mets_spp %>% 
+  mutate(king = case_when(K_p > 0 | K_s > 0 | K_r > 0 ~ 1,
+                          TRUE ~ 0),
+         coho = case_when(CO_p > 0 | CO_s > 0 | CO_r > 0 ~ 1,
+                          TRUE ~ 0)) %>% 
+  group_by(decade, reach_id, reach_length, king, coho) %>% 
+  summarize(July_mn_dec = mean(July_mn)) %>% 
+  mutate(July_mn_dec_cuts = cut(July_mn_dec, breaks = 4:14))
+
+
+mets_July_dec_mn <- mets_July_dec_mn %>% 
+  pivot_longer(cols = king:coho, names_to = "species", values_to = "present") 
+
+mets_July_dec_mn <- mets_July_dec_mn %>% 
+  ungroup() %>% 
+  mutate(sppf = factor(species, levels = c("king", "coho"), labels = c("Chinook", "Coho")))
+```
+
+Figure 12. Distribution of mean July temperatures in the Deshka watershed by species and decade.
+
+
+```{r}
+mets_July_dec_mn %>% 
+  filter(present > 0) %>% 
+  ggplot() +
+  geom_bar(aes(x = July_mn_dec_cuts, weight = reach_length/1000, fill = sppf), position = "dodge") +
+  theme_bw() +
+  facet_wrap(~decade) +
+  labs(x = "Mean July Temperature (°C)", y = "Stream Length (km)", fill = "Species")
+
+```
+
+Alternatively, the cdf shows that all three overlap considerably in thermal habitat.
+
+```{r}
+mets_July_dec_mn %>% 
+  filter(present > 0) %>% 
+  ggplot(aes(x = July_mn_dec, color = sppf, weight = reach_length/1000)) +
+  stat_ecdf() +
+  theme_bw() +
+  labs(x = "Mean July Temperature", y = "Cumulative Distribution", color = "Species")
+  
+  
+```
+
+
+Figure 13. Distribution of maximum 7-day moving average of mean daily temperatures across the Anchor-Stariski watersheds for salmon rearing and spawning habitats. 2004 and 2008 are warm and cold years, respectively, in the dataset of historical predictions (1980-2018).
+
+```{r}
+
+rear <- cat_mets_hist %>% 
+  filter(CO_r == 1|K_r == 1) %>% 
+  mutate(habitat = "Rearing")
+
+spawn <- cat_mets_hist %>% 
+  filter(CO_s == 1|K_s == 1) %>% 
+  mutate(habitat = "Spawning")
+
+rbind(rear, spawn) %>% 
+  ggplot() +
+  geom_sf(aes(fill = MA7d_DAT), color = NA) +
+  facet_grid(habitat~year) +
+  theme_bw() +
+  scale_fill_distiller(type = "div", palette = "Spectral") +
+  scale_x_continuous(breaks = c(-150.2, -150.4, -150.6)) +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1)) 
+
+```
+
+```{r eval = FALSE}
+rear %>% 
+  as.data.frame() %>% 
+  count(year, MA7d_DAT > 16)
+
+spawn %>% 
+  as.data.frame() %>% 
+  count(year, MA7d_DAT > 13)
+
+spawn %>% 
+  as.data.frame() %>% 
+  group_by(year) %>% 
+  summarize(mean(MA7d_DAT_jd))
+
+
+
+```
+
+
+Trying proportions.
+
+```{r eval = FALSE}
+
+myplot <- ggplot(tips, aes(day, group = sex)) + 
+          geom_bar(aes(y = ..prop.., fill = factor(..x..)), stat="count") + 
+          scale_y_continuous(labels=scales::percent) +
+          ylab("relative frequencies") +
+          facet_grid(~sex)
+
+mets_spp %>% 
+  group_by(decade, nhdID_short, LengthKM) %>% 
+  summarize(July_mn_dec = mean(July_mn)) %>% 
+  mutate(July_mn_dec_cuts = cut(July_mn_dec, breaks = 11:20)) %>% 
+  ggplot() +
+  geom_bar(aes(x = July_mn_dec_cuts, y = ..prop.., group = 1, fill = decade), stat = "count", position = "dodge") +
+  facet_wrap(~decade) +
+  theme_bw() 
+  labs(x = "Mean July Temperature (°C)", y = "Stream Length (km)")
+```
+
+
+```{r eval = FALSE}
+
+preds <- preds %>% 
+  mutate(year = year(date),
+         month = month(date),
+         decade = case_when(year > 1979 & year < 1990 ~ "1980s",
+                            year > 1989 & year < 2000 ~ "1990s",
+                            year > 1999 & year < 2010 ~ "2000s",
+                            year > 2009 & year < 2020 ~ "2010s"))
+
+preds %>% 
+  filter(K_s > 0) %>% 
+  group_by(decade, GridCode, month) %>% 
+  summarize(mon_temps = mean(predict.fixed)) %>% 
+  ggplot() +
+  geom_histogram(aes(x = mon_temps, fill = decade), alpha = 0.5, position = "identity") +
+  facet_wrap(~month)
+
+preds %>% 
+  filter(K_s > 0) %>% 
+  group_by(decade, GridCode, month) %>% 
+  summarize(mon_temps = mean(predict.fixed)) %>% 
+  ggplot() +
+  geom_density(aes(x = mon_temps, fill = decade), alpha = 0.5, position = "identity") +
+  facet_wrap(~month)
+
+preds %>% 
+  filter(K_s > 0, month == 7) %>% 
+  group_by(decade, GridCode) %>% 
+  summarize(mn_july_temps = mean(predict.fixed)) %>% 
+  ggplot() +
+  geom_density(aes(x = mn_july_temps, fill = decade), alpha = 0.5, position = "identity")
+
+preds %>% 
+  filter(K_s > 0, month == 7) %>% 
+  group_by(decade, HUC_name, GridCode) %>% 
+  summarize(mn_july_temps = mean(predict.fixed)) %>% 
+  filter(mn_july_temps > 16.5)
+
+```
+Look at distribution of all catchments in Deshka over time.
+
+```{r eval = FALSE}
+
+preds %>% 
+  group_by(decade, GridCode, month) %>% 
+  summarize(mon_temps = mean(predict.fixed)) %>% 
+  ggplot() +
+  geom_histogram(aes(x = mon_temps, fill = decade), alpha = 0.5, position = "identity") +
+  facet_wrap(~month)
+
+preds %>% 
+  group_by(decade, GridCode, month) %>% 
+  summarize(mon_temps = mean(predict.fixed)) %>% 
+  ggplot() +
+  geom_density(aes(x = mon_temps, fill = decade), alpha = 0.5, position = "identity") +
+  facet_wrap(~month)
+```
+
+What about a times series indicating how air temperatures have changed (using daymet)?
+
+```{r eval = FALSE}
+
+tair %>% 
+  filter(month(date) == 7) %>% 
+  group_by(year = year(date)) %>% 
+  summarize(mn_july = mean(tair3)) %>% 
+  ggplot(aes(x = year, y = mn_july)) +
+  geom_point()
+
+tair %>% 
+  filter(month(date) == 7) %>% 
+  group_by(year = year(date)) %>% 
+  summarize(mn_july = mean(tair3)) %>% 
+  mutate(decade = case_when(year > 1979 & year < 1990 ~ "1980s",
+                            year > 1989 & year < 2000 ~ "1990s",
+                            year > 1999 & year < 2010 ~ "2000s",
+                            year > 2009 & year < 2020 ~ "2010s")) %>% 
+  group_by(decade) %>% 
+  summarize(mean(mn_july))
+
+```
+
+
+```{r eval = FALSE}
+
+p1 <- preds %>% 
+  filter(K_p > 0|K_r > 0|K_s > 0, month == 7) %>% 
+  group_by(decade, GridCode) %>% 
+  summarize(mn_july_temps = mean(preds)) %>% 
+  ggplot() +
+  geom_density(aes(x = mn_july_temps, fill = decade), alpha = 0.5, position = "identity")
+
+p2 <- preds %>% 
+  filter(CO_p > 0|CO_r > 0|CO_s > 0, month == 7) %>% 
+  group_by(decade, GridCode) %>% 
+  summarize(mn_july_temps = mean(preds)) %>% 
+  ggplot() +
+  geom_density(aes(x = mn_july_temps, fill = decade), alpha = 0.5, position = "identity")
+
+p3 <- preds %>% 
+  filter(Pk_p > 0, month == 7) %>% 
+  group_by(decade, GridCode) %>% 
+  summarize(mn_july_temps = mean(preds)) %>% 
+  ggplot() +
+  geom_density(aes(x = mn_july_temps, fill = decade), alpha = 0.5, position = "identity")
+
+
+grid.arrange(p1, p2, p3, ncol = 1)
+```
+
+```{r eval = FALSE}
+
+preds %>% 
+  filter(salmon > 0, month == 7) %>% 
+  group_by(decade, year, jd) %>% 
+  summarize(mn_temps = mean(preds, na.rm = TRUE),
+            sd_temps = sd(preds, na.rm = TRUE)) %>% 
+  ggplot() +
+  geom_line(aes(x = jd, y = mn_temps, color = as.factor(year))) +
+  facet_wrap(~decade)
+
+
+```
+
+Below 0 predictions
+
+```{r eval = FALSE}
+preds %>% 
+  filter(predict < 0) %>% 
+  distinct(HUC_name, year) %>% 
+  arrange(year, HUC_name)
+
+preds %>% 
+  filter(predict < 0) %>% 
+  arrange(predict) %>% 
+  select(HUC_name, date, predict)
+```
+
+
+
+
+
+
+
+
+
+# NOAA climate trends
+
+```{r eval = FALSE}
+
+noaa <- read_csv("data/NOAA_climate/AK-170-tavg-4-9-1895-2020.csv", skip = 4, col_names = TRUE)
+
+noaa <- noaa %>% 
+  mutate(temp_c = (Value - 32)*(5/9),
+         year = as.numeric(substr(Date, 1, 4)))
+
+lm(temp_c ~ year, data = noaa) %>% summary
+
+noaa %>% 
+  ggplot(aes(x = year, y = temp_c)) +
+  geom_point() +
+  geom_smooth()
+```

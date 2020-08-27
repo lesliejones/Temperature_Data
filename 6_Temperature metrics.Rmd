@@ -1,0 +1,175 @@
+---
+title: "6_Temperature metrics"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+
+library(zoo)
+library(lubridate)
+library(tidyverse) 
+
+
+```
+
+
+# Calculate metrics for each rca and year - historic data
+
+Careful with the moving average because we want them to start and stop by each rca and year.
+
+```{r}
+
+# load(file = "output/preds.Rdata")
+
+```
+
+Test the metric calculations and check them first.
+
+```{r eval = FALSE}
+
+#first add rolling mean by catchment and year
+mets.test <- preds %>%  
+  filter(reach_id %in% c(1, 2, 3), year %in% c(2000:2001)) %>% 
+  group_by(reach_id, year) %>% 
+  mutate(MA_mean = rollmean(predict.HUC_name, k = 7, align = "center", fill = NA),
+         jd = format(date, "%j")) 
+
+mets.test %>% 
+  select(reach_id, date, predict.HUC_name, MA_mean, jd)
+```
+
+Calculate the correct maximums and timing by removing the NA in the rolling mean. Note that this will affect September summaries, so calculate these separately and merge later.
+
+```{r}
+
+mag.mets <- mets.test %>% 
+  filter(!is.na(MA_mean)) %>% 
+  group_by(reach_id, year) %>% 
+  summarize(MxDAT = max(predict.HUC_name),
+            MxDAT_jd = jd[max(predict.HUC_name) == predict.HUC_name][1],
+            MA7d_DAT = max(MA_mean),
+            MA7d_DAT_jd = jd[max(MA_mean) == MA_mean][1])
+
+mag.mets
+
+all.mets <- mets.test %>% 
+  summarize(June_mn = mean(predict.HUC_name[month == 6]),
+            July_mn = mean(predict.HUC_name[month == 7]),
+            Aug_mn = mean(predict.HUC_name[month == 8]),
+            Sep_mn = mean(predict.HUC_name[month == 9]),
+            Var = var(predict.HUC_name),
+            Range = max(predict.HUC_name) - min(predict.HUC_name),
+            CDD = sum(predict.HUC_name),
+            Sum_13_JAS = sum(predict.HUC_name[month %in% 7:9] > 13),
+            Sum_18_JJAS = sum(predict.HUC_name[month %in% 6:9] > 18)
+            )
+
+all.mets
+
+all.mets <- left_join(all.mets, mag.mets)
+
+mets.test %>%  
+  filter(reach_id == 1, year == 2000) %>%
+  ggplot(aes(x = date, y = MA_mean)) +
+  geom_line()
+
+```
+
+Try running for all predictions.
+
+```{r}
+#add moving average
+preds_ma <- preds %>%  
+  group_by(reach_id, year) %>% 
+  mutate(MA_mean = rollmean(predict.HUC_name, k = 7, align = "center", fill = NA),
+         jd = format(date, "%j")) 
+
+#calculate magnitude and timing metrics.
+mag.mets <- preds_ma %>% 
+  filter(!is.na(MA_mean)) %>% 
+  group_by(reach_id, year) %>% 
+  summarize(MxDAT = max(predict.HUC_name),
+            MxDAT_jd = jd[max(predict.HUC_name) == predict.HUC_name][1],
+            MA7d_DAT = max(MA_mean),
+            MA7d_DAT_jd = jd[max(MA_mean) == MA_mean][1])
+
+#calculate remaining metrics.
+mets <- preds %>%  
+  group_by(reach_id, year) %>% 
+  summarize(June_mn = mean(predict.HUC_name[month == 6]),
+            July_mn = mean(predict.HUC_name[month == 7]),
+            Aug_mn = mean(predict.HUC_name[month == 8]),
+            Sep_mn = mean(predict.HUC_name[month == 9]),
+            Var = var(predict.HUC_name),
+            Range = max(predict.HUC_name) - min(predict.HUC_name),
+            CDD = sum(predict.HUC_name),
+            Sum_13_JAS = sum(predict.HUC_name[month %in% 7:9] > 13),
+            Sum_18_JJAS = sum(predict.HUC_name[month %in% 6:9] > 18)
+            )
+
+#combine all mets
+mets <- left_join(mets, mag.mets)
+
+save(mets, file = "output/mets.RData")
+
+```
+
+
+
+
+# Calculate metrics for future scenarios
+
+Remove variability and timing metrics because they don't show any change. The air temp deltas are superimposed on the same summer variability in the baseline so timing and variation don't change in the future.
+
+```{r}
+#add moving average
+preds_fut_ma <- preds_fut2 %>%  
+  group_by(reach_id, scenario) %>% 
+  mutate(MA_mean = rollmean(predict.HUC_name, k = 7, align = "center", fill = NA)) 
+
+#calculate magnitude and timing metrics.
+mag.mets_fut <- preds_fut_ma %>% 
+  filter(!is.na(MA_mean)) %>% 
+  group_by(reach_id, scenario) %>% 
+  summarize(MxDAT = max(predict.HUC_name),
+            # MxDAT_jd = jd[max(predict.HUC_name) == predict.HUC_name][1],
+            MA7d_DAT = max(MA_mean))
+            # MA7d_DAT_jd = jd[max(MA_mean) == MA_mean][1])
+
+#get month, jd assignment.
+day_to_month <- preds_fut2 %>% 
+  ungroup() %>% 
+  distinct(day) %>% 
+  mutate(date = as.Date(day, origin = "2020-01-01"),
+         month = month(date))
+
+
+#calculate remaining metrics.
+mets_fut <- left_join(preds_fut2, day_to_month %>% dplyr::select(day, month)) %>%  
+   group_by(reach_id, scenario) %>% 
+  summarize(June_mn = mean(predict.HUC_name[month == 6]),
+            July_mn = mean(predict.HUC_name[month == 7]),
+            Aug_mn = mean(predict.HUC_name[month == 8]),
+            Sep_mn = mean(predict.HUC_name[month == 9]),
+            # Var = var(predict.HUC_name),
+            # Range = max(predict.HUC_name) - min(predict.HUC_name),
+            CDD = sum(predict.HUC_name),
+            Sum_13_JAS = sum(predict.HUC_name[month %in% 7:9] > 13),
+            Sum_18_JJAS = sum(predict.HUC_name[month %in% 6:9] > 18))
+
+#combine all mets
+mets_fut <- left_join(mets_fut, mag.mets_fut)
+
+#add better name for scenarios for figures
+mets_fut <- mets_fut %>% 
+  ungroup() %>% 
+  mutate(scenf = factor(scenario, labels = c("Baseline", "High Snow Plus 2°C", "High Snow Plus 4°C", 
+                                             "Low Snow Plus 2°C", "Low Snow Plus 4°C")))
+
+
+save(mets_fut, file = "output/mets_fut.Rdata")
+```
+

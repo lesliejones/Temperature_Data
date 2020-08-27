@@ -1,0 +1,367 @@
+---
+title: "5_predictions"
+author: "Leslie"
+date: "1/9/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(sf)
+library(tidyverse)
+library(rgdal)
+library(lubridate)
+library(gridExtra)
+```
+
+# Create data frame of spatial and climate variables 
+
+Note that final predictive model includes covariates for 3-day air temperature, swe, season, and catchment elevation. These are the only variables needed for prediction. Already summarized range of spatial covariates for the report when the reach and rca feature classes were loaded in script 1.
+
+## Spatial covariates
+
+Read in spatial covariates associated with each RCA. These are stored in two separate feature classes.
+
+```{r}
+fgdb <- "W:/GIS/Anchor/Anchor_spatial.gdb"
+# List all feature classes in a file geodatabase
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+# Read the feature class
+rca_reach <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_03112020")
+rcas <- sf::st_read(dsn = fgdb, layer = "anchor_rcas_attributed_06022020")
+```
+
+Create a new data frame that will be used for predictions. Use the flowacc value and convert to square kilometers. (The cont_area is the 
+flow accumulation multiplied by 25 and converted from square meters to square kilometers.)
+
+```{r}
+
+reach_dat <- rca_reach %>% 
+  as.data.frame() %>% 
+  dplyr::select(reach_id, reach_slope, reach_length, Forest, Shrub, Wetland, Riparian) 
+
+rca_dat <- rcas %>% 
+  as.data.frame() %>% 
+  dplyr::select(rca_id:ca_elev_mn) %>% 
+  mutate(cont_area = flowacc * 25 / 1000000)
+
+```
+
+```{r}
+new_data_sp <- left_join(reach_dat, rca_dat, by = c("reach_id" = "rca_id"))
+  
+```
+
+Save a version of the spatial data the links the species and life stages to the reach_ids. This will be used for the thermal niche figures.
+
+```{r}
+cat_spp <- new_data_sp
+
+save(cat_spp, file = "output/cat_spp.Rdata")
+```
+
+
+## Add Daymet data 
+
+Read in daymet data. Get 3-day air temperature and swe. 
+
+Feature classes in geodatabase with daymet data.
+
+```{r}
+fgdb <- "W:\\Leslie\\GIS\\KFHP\\Geodatabase\\anchor_DAYMET.gdb"
+# List all feature classes in a file geodatabase
+subset(ogrDrivers(), grepl("GDB", name))
+fc_list <- ogrListLayers(fgdb)
+print(fc_list)
+```
+
+Read in the feature class with 3-day air temperatures.
+
+```{r}
+dm3day <- sf::st_read(dsn = fgdb, layer = "tair3_anchor_all")
+
+dm3day <- dm3day %>% 
+  mutate(date = as.Date(date)) %>% 
+  dplyr::select(-Field1)
+
+new_data_cl <- dm3day %>% 
+  mutate(date_day3 = date + 1) %>% 
+  filter(month(date_day3) %in% 6:9)
+
+tail(new_data_cl)
+summary(new_data_cl)
+
+```
+
+Merge climate and spatial data frames. Join on the climate data so that spatial covariates are repeated across all dates.
+
+```{r}
+
+new_data <- new_data_sp %>% 
+  select(reach_id, HUC_name, catchment_elev_mn = rca_elev_mn) %>% 
+  right_join(new_data_cl, by = c("reach_id" = "rca_id"))
+
+```
+
+Add julian date and season covariate.
+
+```{r}
+new_data <- new_data %>% 
+  mutate(day = as.numeric(format(date, "%j")),
+         year = year(date),
+         season = case_when(day < 202 ~ "spring",
+                            day > 201 ~ "fall"))
+
+summary(new_data)
+```
+
+
+Add in April 1 swe and remove extra date field.
+
+```{r}
+sweA1 <- read_csv("Data/sweA1_anchor.csv")
+
+sweA1 <- sweA1 %>% 
+  mutate(year = year(date)) %>% 
+  select(-X1, -date, reach_id = rca_id)
+
+sweA1
+
+new_data <- new_data %>% 
+  select(-date) %>% 
+  left_join(sweA1)
+```
+
+Save new_data file for figures markdown so can share the air temp change moderated by increases in snowpack.
+
+```{r}
+save(new_data, file = "output/new_data.Rdata")
+```
+
+
+
+Check air temperature to see if it is increasing over the 30-year period, like the NOAA data indicate (1 deg C change from 1980-2020). Use rca_id = 932, outlet of Anchor. Looks accurate.
+
+```{r}
+new_data %>% 
+  filter(reach_id == 932, month(date_day3) == 7) %>%
+  group_by(year) %>% 
+  summarize(mn_air = mean(tair3)) %>% 
+  ggplot(aes(x = year, y = mn_air)) +
+  geom_point() +
+  geom_smooth()
+  
+```
+
+Why is there so little change across decades? NOAA data indicates 0.6 F increase/decade for kenai pen borough. 0.6 * 3 = 1.8 over 30 years. 1.8 * 5/9 = 1 deg C change. The air temp coefficient is ~ 0.8 so that would be 0.8 deg C change on average. Did snow pack increase over the same 30 years?
+
+```{r}
+new_data %>% 
+  distinct(year, reach_id, sweA1) %>% 
+  group_by(year) %>% 
+  summarize(swe_mn = mean(sweA1)) %>% 
+  ggplot(aes(x = year, y = swe_mn)) +
+  geom_point() +
+  geom_smooth()
+
+
+```
+
+
+# Predictions over new data frame
+
+Load model from script 3.
+
+```{r}
+load(file = "output/anchor_pm.Rdata")
+```
+
+Center variables in final predictive model using means from original modeling data frame.
+
+```{r}
+
+load(file = "output/temp.dm.cen.Rdata")
+
+tair3_mn <- attr(temp.dm.cen$tair3c, "scaled:center")
+catchment_elev_mn_mn <- attr(temp.dm.cen$catchment_elev_mnc, "scaled:center")
+sweA1_mn <- attr(temp.dm.cen$sweA1c, "scaled:center")
+
+new_data <- new_data %>% 
+  mutate(tair3c = tair3 - tair3_mn,
+         catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn,
+         sweA1c = sweA1 - sweA1_mn)
+
+preds <- predict(anchor_pm, newdata = new_data, level = 0:1)
+
+preds <- cbind(new_data, preds %>% dplyr::select(predict.fixed:predict.HUC_name))
+
+```
+
+Add additional variables.
+
+```{r}
+
+preds <- preds %>% 
+  rename(date = date_day3) %>% 
+  mutate(year = year(date),
+         month = month(date),
+         decade = case_when(year > 1979 & year < 1990 ~ "1980s",
+                            year > 1989 & year < 2000 ~ "1990s",
+                            year > 1999 & year < 2010 ~ "2000s",
+                            year > 2009 & year < 2020 ~ "2010s"))
+
+preds %>% 
+  filter(predict.HUC_name < 0) %>% 
+  count(HUC_name, month)
+
+preds %>% filter(jd == 261)
+
+
+```
+
+Save preds data frame. At this point, we are interested in using the preds to create metrics. From there, we can rejoin to spatial data and summarize - e.g. by species or life stage.
+
+```{r}
+
+save(preds, file = "output/preds.Rdata")
+
+```
+
+# Future Scenarios
+
+Create a current baseline using predictions for 2000-2018. Baseline includes average values across all RCAs for 3-day air temperatures. Then grab a low snow and high snow year within that baseline. 
+
+New data for predicting stream tempatures:
+
+* Scenario 1: low snow and 2 deg air temperature change.
+* Scenario 2: low snow and 4 deg air temperature change.
+* Scenario 3: high snow and 2 deg air temperature change.
+* Scenario 4: high snow and 4 deg air temperature change.
+
+Identify low and high snow years within the baseline period. Make them similar to the low and high snow years in the historic scenarios. 3rd lowest snow year was 2015 (30 mm) and 3rd highest snow year was 2008 (131 mm). These are close to 10th and 90th percentiles (26 and 141 mm, respectively).
+
+```{r}
+swe_bl <- preds %>% 
+  filter(year %in% 2000:2018) %>% 
+  group_by(year) %>% 
+  summarize(sweA1 = mean(sweA1))
+
+swe_bl %>% 
+  ggplot(aes(y = fct_reorder(as.factor(year), sweA1), x = sweA1)) +
+  geom_point() 
+
+swe_bl %>% 
+  ggplot() +
+  geom_histogram(aes(x = sweA1), bins = 10)
+
+swe_bl %>% 
+  pull(sweA1) %>% 
+  quantile(probs = c(0.1, 0.9))
+
+swe_bl %>% 
+  arrange(desc(sweA1))
+
+```
+
+
+Create data frames for prediction under the four scenarios.
+
+```{r}
+
+newData_S1 <- preds %>% 
+  filter(year %in% 2000:2018) %>% 
+  group_by(HUC_name, reach_id, day, season, catchment_elev_mn) %>% 
+  summarize(tair3 = mean(tair3) + 2) %>% 
+  left_join(preds %>% filter(year == 2015) %>% distinct(reach_id, sweA1))
+
+newData_S2 <- preds %>% 
+  filter(year %in% 2000:2018) %>% 
+  group_by(HUC_name, reach_id, day, season, catchment_elev_mn) %>% 
+  summarize(tair3 = mean(tair3) + 4) %>% 
+  left_join(preds %>% filter(year == 2015) %>% distinct(reach_id, sweA1))
+
+newData_S3 <- preds %>% 
+  filter(year %in% 2000:2018) %>% 
+  group_by(HUC_name, reach_id, day, season, catchment_elev_mn) %>% 
+  summarize(tair3 = mean(tair3) + 2) %>% 
+  left_join(preds %>% filter(year == 2008) %>% distinct(reach_id, sweA1))
+
+newData_S4 <- preds %>% 
+  filter(year %in% 2000:2018) %>% 
+  group_by(HUC_name, reach_id, day, season, catchment_elev_mn) %>% 
+  summarize(tair3 = mean(tair3) + 4) %>% 
+  left_join(preds %>% filter(year == 2008) %>% distinct(reach_id, sweA1))
+
+```
+
+
+Predict. Need to center the new data because intercept is based on centered data.
+
+```{r}
+
+newData_S1 <- newData_S1 %>% 
+  mutate(tair3c = tair3 - tair3_mn,
+         sweA1c = sweA1 - sweA1_mn,
+         catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn)
+
+newData_S2 <- newData_S2 %>% 
+  mutate(tair3c = tair3 - tair3_mn,
+         sweA1c = sweA1 - sweA1_mn,
+         catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn)
+
+newData_S3 <- newData_S3 %>% 
+  mutate(tair3c = tair3 - tair3_mn,
+         sweA1c = sweA1 - sweA1_mn,
+         catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn)
+
+newData_S4 <- newData_S4 %>% 
+  mutate(tair3c = tair3 - tair3_mn,
+         sweA1c = sweA1 - sweA1_mn,
+         catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn)
+
+
+preds_S1 <- cbind(newData_S1 %>% ungroup() %>% dplyr::select(-HUC_name), predict(anchor_pm, newdata = newData_S1, level = 0:1)) %>% 
+  mutate(scenario = "low snow plus2")
+
+preds_S2 <- cbind(newData_S2 %>% ungroup() %>% dplyr::select(-HUC_name), predict(anchor_pm, newdata = newData_S2, level = 0:1)) %>% 
+  mutate(scenario = "low snow plus4")
+
+preds_S3 <- cbind(newData_S3 %>% ungroup() %>% dplyr::select(-HUC_name), predict(anchor_pm, newdata = newData_S3, level = 0:1)) %>% 
+  mutate(scenario = "high snow plus2")
+
+preds_S4 <- cbind(newData_S4 %>% ungroup() %>% dplyr::select(-HUC_name), predict(anchor_pm, newdata = newData_S4, level = 0:1)) %>% 
+  mutate(scenario = "high snow plus4")
+
+preds_fut <- rbind(preds_S1, preds_S2, preds_S3, preds_S4)
+
+```
+
+Add baseline predictions to data frame and only include pertinent fields.
+
+```{r}
+
+preds_bl <- preds %>% 
+  filter(year %in% 2000:2018) %>% 
+  group_by(HUC_name, reach_id, day) %>% 
+  summarize(predict.HUC_name = mean(predict.HUC_name)) %>% 
+  mutate(scenario = "baseline")
+
+preds_fut2 <- rbind(preds_bl, preds_fut %>% dplyr::select(HUC_name, reach_id, day, predict.HUC_name, scenario))
+
+preds_fut2 %>% 
+  ungroup() %>% 
+  group_by(HUC_name, scenario) %>% 
+  summarize(mean = mean(predict.HUC_name)) %>% 
+  pivot_wider(names_from = scenario, values_from = mean)
+
+```
+
+Save predictions data frame. -> calculate metrics in script 3, make figures in script 5.
+
+```{r}
+save(preds_fut2, file = "output/preds_fut2.Rdata")
+
+```
+
