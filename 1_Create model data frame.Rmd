@@ -506,12 +506,17 @@ ggplot(data=temp.dm, aes(x = day, y = index, color=factor(year))) +
 
 ## Seasonal split on maximum temperatures
 
-Identify median value of Maximum stream temperature and air temperature to locate apex of ascending and descending limb and seasonal break in model. Stream temp = 201 and air temp = 205. Choose July 20 (julian day = 201) as split. Will have 2 seasons June 1 - July 20: (152-201) and july 21 - September 30: (202-303)
+Identify median value of Maximum stream temperature and air temperature to locate apex of ascending and descending limb and seasonal break in model. 
+
+Old notes: Stream temp = 201 and air temp = 205. Choose July 20 (julian day = 201) as split. Will have 2 seasons June 1 - July 20: (152-201) and july 21 - September 30: (202-303). 
+
+The stream temperature dates don't match what I have for either MWAT or Max daily mean. Possibly the MWAT I passed to Leslie before was calculated incorrectly. Also for Deshka peak was found using max daily mean because the maximum timing is much more consistent in that system.
 
 ```{r}
 sites <- temp %>% distinct(Site) %>% pull(Site)
-# i <- sites[14]
-#pdf("Plots of temperature by year and site.pdf", width = 12, height = 8, units = "in")
+
+pdf("Plots of temperature by year and site.pdf", width = 12, height = 8, units = "in")
+
 for(i in sites) {
   dat <- temp %>% filter(Site == i)
   sitename <- dat %>% distinct(Site) %>% pull(Site)
@@ -522,30 +527,60 @@ for(i in sites) {
   print(p)
 }
 dev.off()
-#get median julian day for max ma_mean
+```
+
+
+
+```{r}
+#add a rolling mean to temp along with month and year
+temp <- temp %>% 
+  mutate(month = month(sampleDate),
+         year = year(sampleDate)) %>% 
+  group_by(Site, year) %>% 
+  mutate(ma_mean = rollmean(meanT, k = 7, fill = NA))
+
+#get julian day for max ma_mean
 max_ma_mean <- temp %>% 
-  filter(month %in% 6:8) %>% 
+  filter(!is.na(ma_mean), month %in% 6:7) %>% 
   group_by(Site, year) %>% 
-  summarize(ma_mean = max(ma_mean, na.rm = TRUE),
-            number_of_days = n()) %>% 
-  filter(number_of_days > 71)
-max_ma_mean
-temp %>% 
-  right_join(max_ma_mean) %>% 
-  summarize(mean(day),
-            sd(day))
-#get median julian day for air temperature
-max_tair <- temp %>% 
-  filter(month %in% 6:8) %>% 
+  summarize(max_ma = max(ma_mean),
+            max_ma_date = sampleDate[max(ma_mean) == ma_mean][1],
+            max_ma_jd = format(max_ma_date, "%j"),
+            count = n())
+
+max_ma_mean %>% 
+  filter(count > 54) %>% 
+  ungroup() %>% 
+  count(max_ma_jd)
+  
+```
+
+Look at maximum mean daily temperature, which is how the cutoff was chosen for the Deshka. Add a count for each site and year because there are a lot of site-years that started in August and likely missed the maximum. If we focus on site-years that have 90% of days in the June/July period (n > 54), then the maximum occurs on JD 191. This is very close to the peak for the moving average, which is 189. Go with 191 and update season covariate in the model.
+
+```{r}
+max_temp_summary <-temp.dm %>%
+  filter(month %in% 6:7) %>% 
   group_by(Site, year) %>% 
-  summarize(max_tair = max(tair, na.rm = TRUE),
-            number_of_days = n()) %>% 
-  filter(number_of_days > 71)
-max_tair
-temp %>% 
-  right_join(max_tair) %>% 
-  summarize(mean(day),
-            sd(day))
+  summarize(maxT_sy = max(mean),
+            maxT_date = sampleDate[maxT_sy == mean][1],
+            maxT_jd = as.numeric(format(maxT_date, "%j")),
+            maxTair3 = max(tair3),
+            maxTair3_date = sampleDate[maxTair3 == tair3][1],
+            maxTair3_jd = as.numeric(format(maxTair3_date, "%j")),
+            count = n())
+
+max_temp_summary %>% 
+  filter(Site == "CIK14") %>% 
+  arrange(maxT_jd)
+
+max_temp_summary %>%
+  ungroup() %>% 
+  filter(count > 54) %>%
+  count(maxT_jd) 
+
+max_temp_summary %>%
+  filter(Site == "CIK14", count > 54) 
+
 ```
 
 
@@ -560,10 +595,10 @@ str(temp.dm)
 
 temp.dm <- temp.dm %>% 
   mutate(Riparian = as.numeric(Riparian),
-         season = case_when(day < 202 ~ "spring",
-                            day > 201 ~ "fall"))
+         season = case_when(jd < 191 ~ "spring",
+                            jd > 190 ~ "fall"))
 
-temp.dm %>% distinct(season, day)
+temp.dm %>% distinct(season, jd)
 
 save(temp.dm, file = "output/temp.dm.Rdata")
 ```

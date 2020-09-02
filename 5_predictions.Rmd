@@ -264,6 +264,19 @@ swe_bl %>%
   arrange(desc(sweA1))
 
 ```
+What is a good combination of low snow/warm, low snow/cold, high snow/warm, high snow/cold?
+
+```{r}
+preds %>% 
+  # filter(year %in% 2000:2018) %>% 
+  group_by(year) %>% 
+  summarize(sweA1 = mean(sweA1),
+            tair = mean(tair3)) %>% 
+  ggplot(aes(x = sweA1, y = tair)) +
+  # geom_point() +
+  geom_text(aes(label = year)) +
+  geom_smooth(method = "lm")
+```
 
 
 Create data frames for prediction under the four scenarios.

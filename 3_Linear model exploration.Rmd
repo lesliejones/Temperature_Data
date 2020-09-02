@@ -15,7 +15,7 @@ knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
 # library(corrplot)
 library(MuMIn)
 # library(ape)
-# library(readxl)
+library(readxl)
 # library(VIF)
 # library(jtools)
 library(nlme)
@@ -26,11 +26,12 @@ library(car)
 # library(GGally)
 # library(Metrics)
 # library(broom)
+library(gridExtra)
 library(tidyverse)
 # library(ggeffects)
 library(sjPlot)
 # library(MASS)
-library(effects)
+# library(effects)
 
 
 
@@ -193,7 +194,7 @@ Alternatively, a pairplot so can see the data points.
 
 ```{r}
 temp.dm %>% 
-  distinct(reach_slope, Shrub, Wetland, 
+  distinct(reach_slope, Forest, Wetland, 
            catchment_elev_mn, ca_elev_mn, cont_area, sweA1) %>% 
   pairs(upper.panel = panel.cor, lower.panel = panel.smooth)
 
@@ -674,16 +675,29 @@ sqrt(sum(((predict(spring.lm) - spring_meanT$meanT) ^ 2))/2235)
 ```
 
 
-# Final summer model 8/24/20
+# Final summer model 9/1/20
+
+Try converting temp.dm to data frame only and making season a factor variable to see if this will fix problems with plot_model.
+
+```{r}
+temp.dm <- as.data.frame(temp.dm)
+
+temp.dm$season <- factor(temp.dm$season)
+
+str(temp.dm)
+```
+
+
+Two small updates on 9/1: removed shrub variable because we didn't include it in the deshka and changed cutoff for timing of maximum temperatures. When writing up that summary, the results contrasted with the 201 cutoff we used previously. Evidence for early July timing (jd = 191) using both mwat and max mean daily temps.
 
 Use centered predictors only. This reduces structural multi-collinearity for squared and interaction terms, but will simplify prediction. 
 
-Check VIF on M1 before doing comparison of random effects. Already dropped forest and reach slope due to high correlations with other variables.
+Check VIF on M1 before doing comparison of random effects. Already dropped forest due to high correlations with other variables.
 
 ```{r}
 
-M1 <- gls(mean ~ tair3c + I(tair3c^2) + jdc + I(jdc^2) + sweA1c + prcp5c + 
-            wetlandc + shrubc + catchment_elev_mnc + cont_areac + ca_elev_mnc + season +
+M1 <- gls(mean ~ tair3c + I(tair3c^2) + jdc + I(jdc^2) + sweA1c + prcp5c + reach_slopec + 
+            wetlandc + catchment_elev_mnc + cont_areac + ca_elev_mnc + season +
             sweA1c:wetlandc + season:(tair3c + I(tair3c^2)), 
           data = temp.dm, na.action = "na.fail") 
 
@@ -692,8 +706,8 @@ vif(M1)
 High VIF for two elevation covariates and contributing area - try dropping ca mean elevation, since that was also dropped in deshka model (will make comparisons easier).
 
 ```{r}
-M1 <- gls(mean ~ tair3c + I(tair3c^2) + jdc + I(jdc^2) + sweA1c + prcp5c +
-            wetlandc + shrubc + catchment_elev_mnc + cont_areac + season +
+M1 <- gls(mean ~ tair3c + I(tair3c^2) + jdc + I(jdc^2) + sweA1c + prcp5c +reach_slopec + 
+            wetlandc + catchment_elev_mnc + cont_areac + season +
             sweA1c:wetlandc + season:(tair3c + I(tair3c^2)), 
           data = temp.dm, na.action = "na.fail") 
 
@@ -701,7 +715,7 @@ vif(M1)
 
 
 ```
-All spatial predictors now have VIF < 5. Some problems with tair/jd/season, but that was the case for the deshka as well.
+All spatial predictors now have VIF < 3. Some problems with tair/jd/season, but that was the case for the deshka as well.
 
 Do we have data for all seasons with each huc12?
 
@@ -715,12 +729,12 @@ temp.dm %>%
 
 ```{r}
 M2 <- lme(mean ~ tair3c + I(tair3c^2) + jdc + I(jdc^2) + sweA1c + prcp5c + 
-            wetlandc + shrubc + catchment_elev_mnc + cont_areac + season +
+            wetlandc + reach_slopec + catchment_elev_mnc + cont_areac + season +
             sweA1c:wetlandc + season:(tair3c + I(tair3c^2)), 
           random = ~ 1|HUC_name/Site, data = temp.dm, na.action = "na.fail") 
 
 M3 <- lme(mean ~ tair3c + I(tair3c^2) + jdc + I(jdc^2) + sweA1c + prcp5c + 
-            wetlandc + shrubc + catchment_elev_mnc + cont_areac + season +
+            wetlandc + reach_slopec + catchment_elev_mnc + cont_areac + season +
             sweA1c:wetlandc + season:(tair3c + I(tair3c^2)), 
           random = ~ 1|HUC_name, data = temp.dm, na.action = "na.fail") 
 
@@ -736,15 +750,20 @@ summary(M2)
 
 intervals(M3, which = "fixed", level = 0.85)
 
+```
 
-#below not working, which is suspect that model is too complex or specified incorrectly.
+Plot model not working here, but worked in Deshka project when anchor M3 model loaded there. Move on with model selection.
+
+```{r}
 plot_model(M3, type = "pred", terms = c("tair3c [all]", "season"))
-plot_model(M3, type = "eff", terms = c("jdc [all]"))
+
+plot_model(M3, type = "pred", terms = c("jdc [all]"))
 plot_model(M3, type = "pred", terms = c("prcp5c"))
 plot_model(M3, type = "pred", terms = c("catchment_elev_mnc [all]"))
 plot_model(M3, type = "pred", terms = c("cont_areac [all]"))
-plot_model(M3, type = "int")
-plot_model(M3, type = "eff", terms = c("wetlandc [all]", "sweA1c"))
+
+plot_model(M3, type = "pred", terms = c("wetlandc", "sweA1c"))
+plot_model(M3, type = "pred", terms = c("sweA1c", "wetlandc"))
 
 save(M3, file = "output/M3.Rdata")
 
@@ -865,7 +884,7 @@ Dredge and AIC.
 
 ```{r}
 M3.ml <- lme(mean ~ tair3c + I(tair3c^2) + jdc + I(jdc^2) + sweA1c + prcp5c + 
-            wetlandc + shrubc + catchment_elev_mnc + cont_areac + season +
+            wetlandc + reach_slopec + catchment_elev_mnc + cont_areac + season +
             sweA1c:wetlandc + season:(tair3c + I(tair3c^2)), 
           random = ~ 1|HUC_name, data = temp.dm, na.action = "na.fail",
           method = "ML", control = lmeControl(opt = "optim"))
@@ -874,24 +893,22 @@ M3.dr <- dredge(M3.ml, fixed = "tair3c", rank = "AIC")
 
 subset(M3.dr, delta < 10)
 subset(M3.dr, cumsum(weight) <= 0.95, recalc.weights = FALSE)
+subset(M3.dr, cumsum(weight) <= 0.95, recalc.weights = FALSE) %>% 
+  write.csv(file = "output/model_selection_table.csv")
 
-M3.2 <- update(M3.ml, .~. -prcp5c)
-anova(M3.ml, M3.2)
+subset(M3.dr, 9, recalc.weights = FALSE)
 
-M3.3 <- update(M3.2, .~. -season:I(tair3c^2))
-anova(M3.2, M3.3)
+tab_model(get.models(M3.dr, 9))
 
-M3.4 <- update(M3.3, .~. -season:tair3c)
-anova(M3.3, M3.4)
 
-tab_model(M3, digits = 4)
-tab_model(M3.3, digits = 4)
+anchor.M3 <- lme(mean ~ tair3c + I(tair3c^2) + jdc + I(jdc^2) + sweA1c +  
+            wetlandc + catchment_elev_mnc + cont_areac + 
+            sweA1c:wetlandc, 
+          random = ~ 1|HUC_name, data = temp.dm, na.action = "na.fail")
 
-plot_model(M3.3, type = "pred", terms = c("tair3c", "season"))
-plot_model(M3.3, type = "pred", terms = "shrubc")
 
-#saved model and tried plot_model in another project. Not sure why it won't plot single terms in this project, when it works fine in deshka project. Didn't help, same error in deshka project.
-anchor.M3 <- M3.3
+plot_model(anchor.M3, type = "pred", terms = "tair3c [all]")
+
 save(anchor.M3, file = "output/anchor.M3.RData")
 
 ```
@@ -971,8 +988,8 @@ for(i in 1:9) {
   training_dat <- temp.dm2 %>% 
     filter(Site %in% train_sites)
   fit <- lme(mean ~ tair3c + I(tair3c^2) + jdc + I(jdc^2) + sweA1c + 
-            wetlandc + shrubc + catchment_elev_mnc + cont_areac + season +
-            sweA1c:wetlandc + season:(tair3c), 
+            wetlandc + catchment_elev_mnc + cont_areac + 
+            sweA1c:wetlandc, 
           random = ~ 1|HUC_name, data = training_dat, na.action = "na.fail") 
   validation_dat <- validation_dat %>% 
     mutate(preds = predict(fit, newdata = validation_dat, level = 0),
@@ -1002,16 +1019,15 @@ Try dredging all summer models from best model per AIC, which was global model. 
 ```{r}
 
 M3.op <- lme(mean ~ tair3c + I(tair3c^2) + jdc + I(jdc^2) + sweA1c + 
-            wetlandc + shrubc + catchment_elev_mnc + cont_areac + season +
-            sweA1c:wetlandc + season:tair3c, 
+            wetlandc + catchment_elev_mnc + cont_areac + 
+            sweA1c:wetlandc, 
           random = ~ 1|HUC_name, data = temp.dm, na.action = "na.fail", 
           control = lmeControl(opt = "optim"))
 
 
 M3_models <- dredge(M3.op, fixed = "tair3c", eval = FALSE,
                     subset = dc(tair3c, I(tair3c^2)) && dc(jdc, I(jdc^2)) &&
-                      dc(wetlandc, sweA1c:wetlandc) && dc(sweA1c, sweA1c:wetlandc) &&
-                      dc(season, season:tair3c))
+                      dc(wetlandc, sweA1c:wetlandc) && dc(sweA1c, sweA1c:wetlandc))
 
 summer_xval_dredge <- data.frame()
 
@@ -1070,37 +1086,30 @@ What are the models with fixed effects < 10 that are much better?
 summer_xval_dredge %>% 
   group_by(model_num, fixed_eff_ct) %>% 
   summarize(mean_mae = mean(mae), mean_rmse = mean(rmse)) %>% 
-  filter(fixed_eff_ct < 10, mean_rmse < 1.65) %>% 
+  filter(fixed_eff_ct < 10, mean_rmse < 1.66) %>% 
   arrange(desc(fixed_eff_ct))
 
-M3_models[[466]]
-summary(eval(M3_models[[54]]))
-summary(eval(M3_models[[62]]))
-
 summer_xval_dredge %>% 
-  filter(model_num == 62)
+  filter(model_num == 18) %>% 
+  arrange(rmse)
 
-summer_xval_dredge %>% 
-  group_by(model_num, fixed_eff_ct) %>% 
-  summarize(mean_mae = mean(mae), mean_rmse = mean(rmse)) %>%
-  filter(model_num == 62)
-
-plot_model(eval(M3_models[[54]]), type = "pred", terms = tair3c)
+M3_models[[18]]
+summary(eval(M3_models[[18]]))
 ```
 
 save cross-validation results.
 
 ```{r}
-save(summer_xval_dredge, file = "output/summer_xval_dredge.RData")
+anchor_xval <- summer_xval_dredge
+
+save(anchor_xval, file = "output/anchor_xval.RData")
 ```
-
-
 
 Save model.
 
 ```{r}
 
-anchor_pm <- eval(M3_models[[62]]) 
+anchor_pm <- eval(M3_models[[18]]) 
 summary(anchor_pm)
 tab_model(anchor_pm, digits = 4)
 
