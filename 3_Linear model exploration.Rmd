@@ -1114,6 +1114,7 @@ summary(anchor_pm)
 tab_model(anchor_pm, digits = 4)
 
 Metrics::rmse(temp.dm$mean, predict(anchor_pm))
+rmse_calc(resid(anchor_pm))
 
 save(anchor_pm, file = "output/anchor_pm.Rdata")
 

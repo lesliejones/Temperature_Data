@@ -109,10 +109,10 @@ Add julian date and season covariate.
 
 ```{r}
 new_data <- new_data %>% 
-  mutate(day = as.numeric(format(date, "%j")),
-         year = year(date),
-         season = case_when(day < 202 ~ "spring",
-                            day > 201 ~ "fall"))
+  mutate(day = as.numeric(format(date_day3, "%j")),
+         year = year(date_day3),
+         season = case_when(day < 191 ~ "spring",
+                            day > 190 ~ "fall"))
 
 summary(new_data)
 ```
@@ -187,11 +187,13 @@ load(file = "output/temp.dm.cen.Rdata")
 tair3_mn <- attr(temp.dm.cen$tair3c, "scaled:center")
 catchment_elev_mn_mn <- attr(temp.dm.cen$catchment_elev_mnc, "scaled:center")
 sweA1_mn <- attr(temp.dm.cen$sweA1c, "scaled:center")
+jdc_mn <- attr(temp.dm.cen$jdc, "scaled:center")
 
 new_data <- new_data %>% 
   mutate(tair3c = tair3 - tair3_mn,
          catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn,
-         sweA1c = sweA1 - sweA1_mn)
+         sweA1c = sweA1 - sweA1_mn,
+         jdc = day - jdc_mn)
 
 preds <- predict(anchor_pm, newdata = new_data, level = 0:1)
 
@@ -216,7 +218,7 @@ preds %>%
   filter(predict.HUC_name < 0) %>% 
   count(HUC_name, month)
 
-preds %>% filter(jd == 261)
+preds %>% filter(day == 261)
 
 
 ```
@@ -317,22 +319,26 @@ Predict. Need to center the new data because intercept is based on centered data
 newData_S1 <- newData_S1 %>% 
   mutate(tair3c = tair3 - tair3_mn,
          sweA1c = sweA1 - sweA1_mn,
-         catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn)
+         catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn,
+         jdc = day - jdc_mn)
 
 newData_S2 <- newData_S2 %>% 
   mutate(tair3c = tair3 - tair3_mn,
          sweA1c = sweA1 - sweA1_mn,
-         catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn)
+         catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn,
+         jdc = day - jdc_mn)
 
 newData_S3 <- newData_S3 %>% 
   mutate(tair3c = tair3 - tair3_mn,
          sweA1c = sweA1 - sweA1_mn,
-         catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn)
+         catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn,
+         jdc = day - jdc_mn)
 
 newData_S4 <- newData_S4 %>% 
   mutate(tair3c = tair3 - tair3_mn,
          sweA1c = sweA1 - sweA1_mn,
-         catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn)
+         catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn,
+         jdc = day - jdc_mn)
 
 
 preds_S1 <- cbind(newData_S1 %>% ungroup() %>% dplyr::select(-HUC_name), predict(anchor_pm, newdata = newData_S1, level = 0:1)) %>% 
@@ -371,7 +377,7 @@ preds_fut2 %>%
 
 ```
 
-Save predictions data frame. -> calculate metrics in script 3, make figures in script 5.
+Save predictions data frame. -> calculate metrics in script 6, make figures in script 5.
 
 ```{r}
 save(preds_fut2, file = "output/preds_fut2.Rdata")
