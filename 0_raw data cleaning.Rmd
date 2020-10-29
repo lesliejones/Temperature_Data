@@ -59,7 +59,7 @@ CIKknb <- CIKknb %>%
 
 CIKdat <- bind_rows(CIKdat, CIKknb)
 ```
-oo
+
 For plotting raw data, need dates and times in one field. Also add doy and year so that they can be used in figures.
 
 ```{r}
@@ -138,7 +138,7 @@ APUdat <- APUdat %>%
   filter(!is.na(Temperature))
 ```
 
-Check that we have correct locations for all sites. Decided to drop Data logger 10 (APU13) per email from John Hagan that says it was a seep. Also manually corrected lat long for data logger 8 in the location csv that I imported to the datbase. APU now has 11 sites in the database.
+Check that we have correct locations for all sites. Decided to drop Data logger 10 (APU13) per email from John Hagan that says it was a seep. Also manually corrected lat long for data logger 8 in the location csv that I imported to the database. APU now has 11 sites in the database.
 
 ```{r}
 APUdat <- APUdat %>% 

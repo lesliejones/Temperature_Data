@@ -67,6 +67,7 @@ CIKdat %>%
   right_join(cik.dups) 
   
 ```
+
 No really big differences, maybe two loggers, or second set of readings during daylight savings fall back at 1 am. Just take the average.
 
 ```{r}
