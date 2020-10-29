@@ -1,0 +1,269 @@
+---
+title: "8_Data Catalog files"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(readxl)
+library(tidyverse)
+library(sf)
+library(lubridate)
+
+options(scipen = 999)
+```
+
+This is for documenting the files that will go on the ACCS Data Catalog. 
+
+1. sites: lat, long, agency id, catchment id, used in model 
+2. temperature data: raw data being formatted for upload to AKTEMP
+3. spatial predictor variables: catchment id, reach_slope, catchment_elev_mn, cont_area, ca_elev_mn, wetland, forest (glacier and lake for Kenai only)
+4. climate predictor variables: catchment id, date, tair3, prcp5, sweA1
+5. predictions: catchment id, date, predicted mean daily stream temp
+6. future predictions: catchment id, scenario, predicted mean daily stream temp
+7. historic temperature metrics: catchment id, year, metric, value
+8. future temperature metrics: catchment id, scenario, metric, value
+
+
+# Shapefiles - catchments and flowlines
+
+Reading in from feature gdb and saving as shapefiles.
+
+* remove rabideux from catchments
+* do we want the AWC info on these? If so, make sure to grab the right gdb file that Dustin corrected.
+* what about the correct id for linking to spatial and climate predictors? I think Leslie used gridcodes .... eek need to link these to nhdplus id.
+
+```{r}
+
+fgdb <- "W:/GIS/Deshka/Deshka_spatial.gdb"
+
+fl <- st_read(dsn = fgdb, layer = "Deshka_NHDFlowline_attributed_05032020")
+fl <- st_zm(fl)
+fl <- fl %>% st_transform(4326)
+
+cat <- st_read(dsn = fgdb, layer = "Deshka_NHDPlusCatchment_wgridcode")
+cat <- st_zm(cat)
+cat<- cat %>% st_transform(4326)
+
+```
+
+save flowlines and catchments as shapefiles. But first remove rabideux creek huc from catchments -- note not in fl.
+
+```{r}
+ggplot() +
+  geom_sf(data = cat) +
+  geom_sf(data = fl, color = "red")
+
+deshka_catchments <- cat %>% 
+  filter(!HUC_name == "Rabideux Creek") %>% 
+  rename(catchmentID = NHDPlusID) %>% 
+  select(catchmentID, HUC12, HUC_name)
+
+deshka_fl <- fl %>% 
+  select(catchmentID = NHDPlusID)
+
+ggplot() +
+  geom_sf(data = deshka_catchments) +
+  geom_sf(data = deshka_fl, color = "red")
+
+st_write(deshka_catchments, "output/data_catalog/deshka_catchments.shp", append = FALSE, delete_layer = TRUE)
+
+st_write(deshka_fl, "output/data_catalog/deshka_flowlines.shp")
+```
+
+
+# Tables
+
+1. sites: lat, long, agency id, catchment id, used in model 
+
+Exported table from sites shapefile that has nhdplus id, lat/longs, and sites excluded from model. The original rca_join table in the create model data frame markdown didn't have lat/longs for all sites.
+
+```{r}
+sites_tbl <- read_excel("data/temp_sites_shp_tbl.xls")
+sites_tbl
+sites_tbl %>% distinct(Site_ID)
+
+deshka_sites_tbl <- sites_tbl %>% 
+  mutate(useSite = case_when(is.na(drop_reason) ~ 1,
+                             TRUE ~ 0)) %>% 
+  rename(SiteID = Site_ID,
+         latitude = lat,
+         longitude = long,
+         catchmentID = NHDPlusID_1) %>% 
+  select(SiteID, catchmentID, latitude, longitude, useSite) 
+
+#all 9 historic sites are used for model.
+deshka_sites_tbl  %>% select(SiteID, useSite) %>% filter(grepl("\\.", SiteID)|grepl("willow", SiteID))
+deshka_sites_tbl %>% write_csv("output/data_catalog/deshka_sites.csv")
+
+```
+
+2. temperature data: raw data being formatted for upload to AKTEMP
+
+This was already created in 0_data_cleaning script. File name is deshka_90sites.csv. Copied in file explorer to data catalog folder and named deshka_temperature_data. 
+NOTE: historic temperature data not in this file since those were brought in as daily values. Copied over code to read in daily values for historic data, filtered on 9 sites in deshka, and saved as a csv.
+
+```{r}
+sue_subdaily %>% distinct(site_ID)
+read_csv("output/deshka_90sites.csv")
+
+tr_dat <- read_excel("data/Thermal_regimes_apps/Appendix A Daily temperature data.xlsx", 
+                     col_names = TRUE, col_types = c("text", "date", "numeric", "numeric", "numeric", "text"))
+
+keep_sites <- c("DESHKA R NR WILLOW AK", "Deshka.cik", "Chijuk.cik", "Moose Cr_Talkeetna.cik", "Moose Mid.arri", "Moose UP.arri", "Kroto DN.arri", "Kroto Up.arri", "Chijik.arri")
+
+tr_deshka_dat <- tr_dat %>% 
+  filter(site_name %in% keep_sites) 
+
+deshka_temperature_data2 <- tr_deshka_dat %>% 
+  rename(SiteID = site_name,
+         Temperature = mean) %>% 
+  mutate(sampleDate = as.Date(date),
+         useData = 1) %>% 
+  dplyr::select(SiteID, sampleDate, Temperature, useData)
+
+deshka_temperature_data2 %>% write_csv("output/data_catalog/deshka_temperature_data2.csv")
+
+```
+
+3. spatial predictor variables: catchment id, reach_slope, catchment_elev_mn, cont_area, ca_elev_mn, wetland, forest (glacier and lake for Kenai only)
+
+Read in covariates associated with the flowlines and catchments in the geodatabase. The NHD ids are the same across these two feature classes. Leslie used a different catchment dataset for extracting daymet data. It matches Dustin's catchments, but removes the area in the northeast that doesn't belong to the Deshka. Import the new catchment feature class with the gridcode on it for merging with daymet later.
+
+Merge attributes for all to the new data frame. Use the flowacc value and convert to square kilometers. (The cont_area is the flow accumulation multiplied by 25 and converted from square meters to square kilometers.)
+
+```{r}
+
+deshka_spatial_variables <- fl %>% 
+  st_set_geometry(NULL) %>% 
+  select(catchmentID = NHDPlusID, reach_slope, Forest, Wetland) 
+
+deshka_spatial_variables <- cat %>% 
+  st_set_geometry(NULL) %>% 
+  select(catchmentID = NHDPlusID, catchment_elev_mn, flowacc, ca_elev_mn) %>% 
+  mutate(cont_area = flowacc * 25 / 1000000) %>% 
+  right_join(deshka_spatial_variables)
+
+#save this for fixing the daymet data so everything is linked by nhdplusid
+nhd_to_gridcode <- cat %>% 
+  select(NHDPlusID, GridCode)
+
+deshka_spatial_variables %>% 
+  select(-flowacc) %>% 
+  write_csv("output/data_catalog/deshka_spatial_variables.csv")
+
+```
+
+4. climate predictor variables: catchment id, date, tair3, prcp5, sweA1
+
+Read in climate covariates generated in KFHP repo that were calculated for the RCAs. These are tables that have climate information linked to the RCAs and that have been copied over the data/daymet folder.
+
+Start with the daymet data: air, precipitation, and SWE. We are now moving forward with 3-day averaged air temperatures. The daymet date represents the middle day.
+
+Read in the air temperature file with data from 1980 - 2019. Note: Daymet is middle of 3-day window. We want daymet to represent day of and two days prior for modeling daily stream temperatures.
+
+```{r}
+tair <- read_csv("W:/Github/KFHP-Analysis/Data/deshka/tair3/tair3day_80-19.csv")
+tair <- tair %>% 
+  mutate(date_day3 = date + 1)
+```
+
+Read in the precipitation file with data from 1980 - 2019. Note: Daymet is middle of 5-day window. We want daymet to represent day of and four days prior for modeling daily stream temperatures.
+
+```{r}
+prcp <- read_csv("W:/Github/KFHP-Analysis/Data/deshka/prcp5/prcp5day_80-19.csv")
+prcp <- prcp %>% 
+  mutate(date_day5 = date + 2)
+```
+
+Read in the SWE file with data from 1980 - 2019. Add year for merging.
+
+```{r}
+swe <- read_csv("W:/Github/KFHP-Analysis/Data/deshka/sweA1/sweA1_deshka_80-19.csv")
+swe <- swe %>% 
+  mutate(year = year(date))
+```
+
+Merge all tair and prcp together and filter to 5/1 to 9/30. Provide swe separately since by year and for april 1, which isn't in the prcp or air data.
+
+```{r}
+summary(tair)
+summary(prcp)
+
+tair_tbl <- tair %>% 
+  left_join(nhd_to_gridcode) %>% 
+  select(catchmentID = NHDPlusID, sampleDate = date_day3, tair3)
+
+prcp_tbl <- prcp %>% 
+  left_join(nhd_to_gridcode) %>% 
+  select(catchmentID = NHDPlusID, sampleDate = date_day5, prcp5)
+
+deshka_climate_variables <- left_join(tair_tbl, prcp_tbl) 
+
+deshka_climate_variables %>% 
+  write_csv("output/data_catalog/deshka_climate_variables.csv")
+
+swe_tbl <- swe %>% 
+  left_join(nhd_to_gridcode) %>% 
+  select(catchmentID = NHDPlusID, sampleDate = date, sampleYear = year, sweA1)
+
+swe_tbl %>% 
+  write_csv("output/data_catalog/deshka_swe_variable.csv")
+```
+
+5. predictions: catchment id, date, predicted mean daily stream temp
+
+Note that even though catchment id is text in this data frame (after paste function), it still writes as a number to csv ands shows up in excel with scientific notation. Just need a note that they have to be converted to numeric to see everything.
+
+```{r}
+deshka_predictions <- readRDS(file = "output/preds.rds")
+
+deshka_predictions %>%
+  mutate(catchmentID = paste("750002000", nhdID_short, sep = "")) %>% 
+  select(catchmentID, date, predict_temp = predict) %>% 
+  write_csv("output/data_catalog/deshka_predictions.csv")
+```
+
+6. future predictions: catchment id, scenario, predicted mean daily stream temp
+
+```{r}
+deshka_future_predictions <- readRDS(file = "output/preds_fut2.rds")
+
+deshka_future_predictions %>%
+  mutate(catchmentID = paste("750002000", nhdID_short, sep = ""),
+         fakedate = as.Date(jd, origin = "2020-01-01"),
+         date = format(fakedate, "%m-%d")) %>% 
+  select(catchmentID, jd, date, scenario, predict_temp = predict) %>% 
+  write_csv("output/data_catalog/deshka_future_predictions.csv")
+
+```
+
+7. historic temperature metrics: catchment id, year, metric, value
+
+```{r}
+deshka_metrics <- readRDS(file = "output/mets.rds")
+
+deshka_metrics %>% 
+  ungroup() %>% 
+  mutate(catchmentID = paste("750002000", nhdID_short, sep = "")) %>% 
+  select(-nhdID_short) %>% 
+  write_csv("output/data_catalog/deshka_metrics.csv")
+
+```
+
+
+8. future temperature metrics: catchment id, scenario, metric, value
+
+
+```{r}
+deshka_future_metrics <- readRDS(file = "output/mets_fut.rds")
+
+deshka_future_metrics %>% 
+  ungroup() %>% 
+  mutate(catchmentID = paste("750002000", nhdID_short, sep = "")) %>% 
+  select(catchmentID, scenario, June_mn:Aug_mn) %>% 
+  write_csv("output/data_catalog/deshka_future_metrics.csv")
+
+```
+

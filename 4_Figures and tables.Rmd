@@ -351,7 +351,8 @@ new_data %>%
   summarize(swe_mn = mean(sweA1)) %>% 
   ggplot(aes(x = year, y = swe_mn)) +
   geom_point() +
-  geom_smooth()
+  geom_smooth() +
+  geom_text(aes(label = year))
 
 
 ```

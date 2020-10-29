@@ -224,12 +224,26 @@ preds %>% filter(day == 261)
 ```
 
 Save preds data frame. At this point, we are interested in using the preds to create metrics. From there, we can rejoin to spatial data and summarize - e.g. by species or life stage.
+Filter to exclude past 9/15.
 
 ```{r}
+preds <- preds %>% 
+  mutate(jd = format(date, "%j")) %>% 
+  filter(jd < 259)
 
-save(preds, file = "output/preds.Rdata")
+saveRDS(preds, file = "output/preds.rds")
 
 ```
+
+Save predictions for a warm and cold year.
+
+```{r}
+preds_2yr <- preds %>% 
+  filter(year %in% c(2004, 2011))
+
+saveRDS(preds_2yr, file = "output/preds_2yr.rds")
+```
+
 
 # Future Scenarios
 
@@ -281,9 +295,21 @@ preds %>%
 ```
 
 
-Create data frames for prediction under the four scenarios.
+Create data frames for prediction under the four scenarios. Also need data frames with average air temperature but low and high snow scenarios for calculating correct predictions under two baselines.
 
 ```{r}
+
+newData_bl_low <- preds %>% 
+  filter(year %in% 2000:2018) %>% 
+  group_by(HUC_name, reach_id, day, season, catchment_elev_mn) %>% 
+  summarize(tair3 = mean(tair3)) %>% 
+  left_join(preds %>% filter(year == 2015) %>% distinct(reach_id, sweA1))
+
+newData_bl_high <- preds %>% 
+  filter(year %in% 2000:2018) %>% 
+  group_by(HUC_name, reach_id, day, season, catchment_elev_mn) %>% 
+  summarize(tair3 = mean(tair3)) %>% 
+  left_join(preds %>% filter(year == 2008) %>% distinct(reach_id, sweA1))
 
 newData_S1 <- preds %>% 
   filter(year %in% 2000:2018) %>% 
@@ -316,6 +342,19 @@ Predict. Need to center the new data because intercept is based on centered data
 
 ```{r}
 
+newData_bl_low <- newData_bl_low %>% 
+  mutate(tair3c = tair3 - tair3_mn,
+         sweA1c = sweA1 - sweA1_mn,
+         catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn,
+         jdc = day - jdc_mn)
+
+newData_bl_high <- newData_bl_high %>% 
+  mutate(tair3c = tair3 - tair3_mn,
+         sweA1c = sweA1 - sweA1_mn,
+         catchment_elev_mnc = catchment_elev_mn - catchment_elev_mn_mn,
+         jdc = day - jdc_mn)
+
+
 newData_S1 <- newData_S1 %>% 
   mutate(tair3c = tair3 - tair3_mn,
          sweA1c = sweA1 - sweA1_mn,
@@ -341,6 +380,13 @@ newData_S4 <- newData_S4 %>%
          jdc = day - jdc_mn)
 
 
+preds_bl_low <- cbind(newData_bl_low %>% ungroup() %>% dplyr::select(-HUC_name), predict(anchor_pm, newdata = newData_bl_low, level = 0:1)) %>% 
+  mutate(scenario = "low snow baseline")
+
+preds_bl_high <- cbind(newData_bl_high %>% ungroup() %>% dplyr::select(-HUC_name), predict(anchor_pm, newdata = newData_bl_high, level = 0:1)) %>% 
+  mutate(scenario = "high snow baseline")
+
+
 preds_S1 <- cbind(newData_S1 %>% ungroup() %>% dplyr::select(-HUC_name), predict(anchor_pm, newdata = newData_S1, level = 0:1)) %>% 
   mutate(scenario = "low snow plus2")
 
@@ -353,7 +399,7 @@ preds_S3 <- cbind(newData_S3 %>% ungroup() %>% dplyr::select(-HUC_name), predict
 preds_S4 <- cbind(newData_S4 %>% ungroup() %>% dplyr::select(-HUC_name), predict(anchor_pm, newdata = newData_S4, level = 0:1)) %>% 
   mutate(scenario = "high snow plus4")
 
-preds_fut <- rbind(preds_S1, preds_S2, preds_S3, preds_S4)
+preds_fut <- rbind(preds_bl_low, preds_bl_high, preds_S1, preds_S2, preds_S3, preds_S4)
 
 ```
 
@@ -361,13 +407,7 @@ Add baseline predictions to data frame and only include pertinent fields.
 
 ```{r}
 
-preds_bl <- preds %>% 
-  filter(year %in% 2000:2018) %>% 
-  group_by(HUC_name, reach_id, day) %>% 
-  summarize(predict.HUC_name = mean(predict.HUC_name)) %>% 
-  mutate(scenario = "baseline")
-
-preds_fut2 <- rbind(preds_bl, preds_fut %>% dplyr::select(HUC_name, reach_id, day, predict.HUC_name, scenario))
+preds_fut2 <- preds_fut %>% select(HUC_name, reach_id, day, predict.HUC_name, scenario)
 
 preds_fut2 %>% 
   ungroup() %>% 
@@ -378,9 +418,34 @@ preds_fut2 %>%
 ```
 
 Save predictions data frame. -> calculate metrics in script 6, make figures in script 5.
+Filter to exclude after 9/15.
 
 ```{r}
-save(preds_fut2, file = "output/preds_fut2.Rdata")
+preds_fut2 <- preds_fut2 %>% 
+  filter(day < 259)
+
+saveRDS(preds_fut2, file = "output/preds_fut2.rds")
+
+```
+
+
+# Range of temps across catchments by day and year
+
+```{r}
+cat_range <- preds %>% 
+  mutate(day = format(date, "%j")) %>% 
+  group_by(year, day) %>% 
+  summarize(range = max(predict.HUC_name) - min(predict.HUC_name)) 
+
+saveRDS(cat_range, "output/cat_range.rds")
+
+cat_range %>% 
+  ggplot(aes(x = as.numeric(day), y = range, color = factor(year))) +
+  geom_line() 
+
+cat_range %>% 
+  ggplot(aes(x = day, y = range)) +
+  geom_boxplot() 
 
 ```
 

@@ -38,6 +38,35 @@ temp <- tibble()
 temp <- bind_rows(temp, CIKdatFinal) 
 temp <- bind_rows(temp, KBRdatFinal) 
 temp <- bind_rows(temp, APUdatFinal) 
+
+```
+
+## Save a copy of temp for AKTEMP database - raw data.
+
+Can probably clip cik14 - site on mainstem anchor bc it is already in knb data, but Sue's other sites in the Anchor system are not in AKOATS.
+
+
+```{r}
+temp_subdaily_data <- temp
+
+saveRDS(temp_subdaily_data, "output/temp.rds")
+
+temp_subdaily_data %>% 
+  distinct(Site, year) %>% 
+  group_by(Site) %>% 
+  summarize(min = min(year),
+            max = max(year))
+
+temp_subdaily_data %>% 
+  select(SiteID = Site, sampleDate, sampleTime, Temperature, useData) %>% 
+  write_csv("output/lower_kenai_51sites.csv")
+
+```
+
+## Summarize daily means and plot
+
+
+```{r}
 #No NAs in temperature field so ok for calculating daily means
 temp <- temp %>%
   group_by(Site, sampleDate) %>% 
@@ -579,6 +608,12 @@ max_temp_summary %>%
   count(maxT_jd) 
 
 max_temp_summary %>%
+  ungroup() %>% 
+  filter(count > 54) %>%
+  summarize(quantile(maxT_jd, probs = c(0.15, 0.85)))
+
+
+max_temp_summary %>%
   filter(Site == "CIK14", count > 54) 
 
 ```
@@ -600,7 +635,7 @@ temp.dm <- temp.dm %>%
 
 temp.dm %>% distinct(season, jd)
 
-save(temp.dm, file = "output/temp.dm.Rdata")
+saveRDS(temp.dm, file = "output/temp.dm.rds")
 ```
 
 ## Create larger data frame with 8-day daymet and lst

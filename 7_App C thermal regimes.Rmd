@@ -1,0 +1,366 @@
+---
+title: "7_App C thermal regimes"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+
+library(RColorBrewer)
+library(sjPlot)
+library(gridExtra)
+library(tidyverse)
+library(sf)
+library(readxl)
+```
+
+Create data frame for figures that can be saved and imported to Deshka appendix c.
+
+# figure 1 data
+```{r}
+
+#read in new file with awc attributes on catchments, these were edited on 9/12/20
+cat_spp <- read_excel("Data/anchor_rcas_awc_updated_091220.xls")
+
+readRDS(file = "output/mets.rds")
+
+mets_spp <- left_join(mets, cat_spp, by = c("reach_id" = "rca_id"))
+
+mets_spp <- mets_spp %>% 
+  mutate(decade = case_when(year > 1979 & year < 1990 ~ "1980s",
+                            year > 1989 & year < 2000 ~ "1990s",
+                            year > 1999 & year < 2010 ~ "2000s",
+                            year > 2009 & year < 2020 ~ "2010s"))
+
+mets_spp <- mets_spp %>% 
+  mutate(MA7d_DAT_jd = as.numeric(MA7d_DAT_jd),
+         MxDAT_jd = as.numeric(MxDAT_jd))
+
+saveRDS(mets_spp, file = "output/mets_spp.rds")
+```
+
+
+```{r include = FALSE}
+fgdb <- "W:/GIS/Anchor/Anchor_spatial.gdb"
+
+fl <- sf::st_read(dsn = fgdb, layer = "anch_rca_reaches_attributed_03112020")
+fl <- st_zm(fl)
+fl <- fl %>% st_transform(4326)
+
+cat <- sf::st_read(dsn = fgdb, layer = "anchor_rcas_attributed_06022020")
+cat <- st_zm(cat)
+cat<- cat %>% st_transform(4326)
+
+#remove incorrect species information from catchments
+cat <- cat %>% 
+  select(-(K_r:S_p))
+
+fl_spp <- merge(fl, cat_spp %>% select(rca_id, K_s, CO_s, K_r, CO_r), by.x = "reach_id", by.y = "rca_id") 
+cat_spp <- merge(cat, cat_spp %>% select(rca_id, K_s, CO_s, K_r, CO_r))
+
+fl_spp_tbl <- fl_spp %>% 
+  st_set_geometry(NULL) %>% 
+  mutate(LengthKM = reach_length/1000)
+
+fl_spp_tbl %>% 
+  summarize(sum(LengthKM))
+
+#get correct length onto met_spp
+mets_spp <- fl_spp_tbl %>% 
+  select(reach_id, LengthKM) %>% 
+  right_join(mets_spp)
+
+plot(fl)
+```
+
+Create watershed boundary and save.
+
+```{r anchor_wtd, eval = FALSE}
+
+anchor_wtd <- cat %>% 
+  mutate(wtd = "Anchor-Stariski") %>% 
+  group_by(wtd) %>% 
+  summarize()
+
+plot(anchor_wtd)
+
+saveRDS(anchor_wtd, "output/anchor_wtd.rds")
+
+#also flowlines
+saveRDS(fl, file = "output/anchor_fl.rds")
+
+```
+```
+
+
+
+```{r}
+#covert to long form so can facet by species and habitat (color = spp, facet = habitat)
+ks <- fl_spp %>% 
+  filter(K_s > 0) %>% 
+  mutate(Species = "Chinook Salmon",
+         Habitat = "Spawning")
+kr <- fl_spp %>% 
+  filter(K_r > 0) %>% 
+  mutate(Species = "Chinook Salmon",
+         Habitat = "Rearing")
+cs <- fl_spp %>% 
+  filter(CO_s > 0) %>% 
+  mutate(Species = "Coho Salmon",
+         Habitat = "Spawning")
+cr <- fl_spp %>% 
+  filter(CO_r > 0) %>% 
+  mutate(Species = "Coho Salmon",
+         Habitat = "Rearing")
+
+
+fl_spp_anchor <- rbind(ks %>% select(-(K_s:CO_r)),
+                   kr %>% select(-(K_s:CO_r)),
+                   cs %>% select(-(K_s:CO_r)),
+                   cr %>% select(-(K_s:CO_r)))
+
+saveRDS(fl_spp_anchor, file = "output/fl_spp_anchor.rds")
+```
+
+
+```{r}
+ggplot() +
+  geom_sf(data = fl_spp %>% filter(K_r > 0))
+```
+
+# figure 2 data
+
+```{r}
+#need a long form of species and life stages. Then can filter and facet as needed.
+
+#get column indicating which species has spawning habitat in each rca
+spawn_mets <- mets_spp %>%
+  ungroup() %>% 
+  select(reach_id:MA7d_DAT_jd, K_s, CO_s, LengthKM, decade) %>% 
+  pivot_longer(cols = c("K_s", "CO_s"), names_to = "Species", values_to = "present") %>% 
+  filter(present > 0)
+
+#get months into their own column so they can be averaged by decade
+spawn_months <- spawn_mets %>% 
+  ungroup() %>% 
+  select(reach_id:Aug_mn, Species, LengthKM, decade) %>% 
+  pivot_longer(cols = June_mn:Aug_mn, names_to = "Month")
+
+#take average of months by decade
+spawn_months_dec <- spawn_months %>%
+  ungroup() %>% 
+  group_by(decade, reach_id, LengthKM, Species, Month) %>% 
+  summarize(dec_mn = mean(value)) %>% 
+  mutate(dec_mn_cuts = cut(dec_mn, breaks = 3:22),
+         Species = factor(Species, levels = c("K_s", "CO_s"), 
+                          labels = c("Chinook Salmon", "Coho Salmon")),
+         Month = factor(Month, levels = c("June_mn", "July_mn", "Aug_mn"),
+                        labels = c("June", "July", "August")))
+
+spawn_months_dec_anchor <- spawn_months_dec
+saveRDS(spawn_months_dec_anchor, file = "output/spawn_months_dec_anchor.rds")
+
+#need to save spawn months for summary across all 40 years
+spawn_months_anchor <- spawn_months
+saveRDS(spawn_months_anchor, file = "output/spawn_months_anchor.rds")
+
+```
+
+```{r}
+missing_9deg <- spawn_months_dec %>% 
+  ungroup() %>% 
+  filter(Month == "September", dec_mn > 9) %>% 
+  distinct(reach_id)
+
+spawn_months %>% 
+  right_join(missing_9deg) %>% 
+  count(year)
+
+spawn_months %>% 
+  right_join(missing_9deg) %>% 
+  filter(Month == "Sep_mn") %>% 
+  ggplot(aes(x = year, y = value, color = factor(reach_id))) +
+  geom_line()
+
+spawn_months_dec %>% 
+  right_join(missing_9deg) %>% 
+  filter(Month == "September") 
+```
+
+Rearing data
+
+```{r}
+#need a long form of species and life stages. Then can filter and facet as needed.
+
+rear_mets <- mets_spp %>%
+  ungroup() %>% 
+  select(reach_id:MA7d_DAT_jd, K_r, CO_r, LengthKM, decade) %>% 
+  pivot_longer(cols = c("K_r", "CO_r"), names_to = "Species", values_to = "present") %>% 
+  filter(present > 0)
+
+rear_months <- rear_mets %>% 
+  ungroup() %>% 
+  select(reach_id:Aug_mn, Species, LengthKM, decade) %>% 
+  pivot_longer(cols = June_mn:Aug_mn, names_to = "Month")
+
+rear_months_dec <- rear_months %>%
+  ungroup() %>% 
+  group_by(decade, reach_id, LengthKM, Species, Month) %>% 
+  summarize(dec_mn = mean(value)) %>% 
+  mutate(dec_mn_cuts = cut(dec_mn, breaks = 1:13),
+         Species = factor(Species, levels = c("K_r", "CO_r"), 
+                          labels = c("Chinook Salmon", "Coho Salmon")),
+         Month = factor(Month, levels = c("June_mn", "July_mn", "Aug_mn"),
+                        labels = c("June", "July", "August")))
+
+
+rear_months_dec_anchor <- rear_months_dec
+saveRDS(rear_months_dec_anchor, file = "output/rear_months_dec_anchor.rds")
+
+#need monthly summaries to get thermal regimes across historical period
+rear_months_anchor <- rear_months
+saveRDS(rear_months_anchor, file = "output/rear_months_anchor.rds")
+
+```
+
+potential pike habitat
+
+```{r}
+mets_spp %>% 
+  select(decade, reach_id, LengthKM, July_mn) %>% 
+  group_by(decade, reach_id, LengthKM) %>% 
+  summarize(july = mean(July_mn)) %>% 
+  ungroup() %>% 
+  filter(decade == "2010s") %>% 
+  summarize(sum(LengthKM[july < 14.73]),
+            sum(LengthKM[july > 14.73]))
+```
+
+Define a cold and a warm year for the Anchor r.
+
+```{r eval = FALSE}
+
+# years by mean july temp
+
+#quantiles - 7.92 and 10.16
+mets %>% 
+  group_by(year) %>% 
+  summarize(july = mean(July_mn)) %>% 
+  summarize(quantile(july, probs = c(0.1, 0.9)))
+
+#cold 2011, warm 2004
+mets %>% 
+  group_by(year) %>% 
+  summarize(july = mean(July_mn)) %>% 
+  arrange(july)
+
+mets %>% 
+  group_by(year) %>% 
+  summarize(july = mean(July_mn)) %>% 
+  ggplot(aes(x = july, y = fct_reorder(factor(year), july))) +
+  geom_point()
+
+```
+
+
+Thermal stress and historic metrics
+
+```{r}
+#merge historic metrics to catchments.
+
+cat_mets_hist <- left_join(cat_spp, mets_spp %>% filter(year %in% c(2011, 2004)) %>% select(reach_id:MA7d_DAT_jd),
+                           by = c("rca_id" = "reach_id")) 
+
+cat_mets_hist_anchor <- cat_mets_hist
+saveRDS(cat_mets_hist_anchor, file = "output/cat_mets_hist_anchor.rds")
+
+
+```
+
+Future metrics
+```{r}
+#need a long form of species and life stages. Then can filter and facet as needed.
+
+mets_fut <- readRDS(file = "output/mets_fut.rds")
+
+mets_fut_spp <- left_join(mets_fut, 
+                          fl_spp_tbl %>% select(reach_id, LengthKM, K_s, CO_s, K_r, CO_r))
+
+
+mets_fut_spp_anchor <- mets_fut_spp
+saveRDS(mets_fut_spp_anchor, file = "output/mets_fut_spp_anchor.rds")
+
+spawn_mets_fut <- mets_fut_spp %>%
+  ungroup() %>% 
+  select(reach_id:LengthKM, K_s, CO_s) %>% 
+  pivot_longer(cols = c("K_s", "CO_s"), names_to = "Species", values_to = "present") %>% 
+  filter(present > 0)
+
+spawn_months_fut <- spawn_mets_fut %>% 
+  ungroup() %>% 
+  select(reach_id:Aug_mn, Species, LengthKM, scenf) %>% 
+  pivot_longer(cols = June_mn:Aug_mn, names_to = "Month")
+
+spawn_months_fut <- spawn_months_fut %>% 
+  mutate(Species = factor(Species, levels = c("K_s", "CO_s"), 
+                          labels = c("Chinook Salmon", "Coho Salmon")),
+         Month = factor(Month, levels = c("June_mn", "July_mn", "Aug_mn"),
+                        labels = c("June", "July", "August")),
+         scen_cuts = cut(value, breaks = 3:18))
+
+spawn_months_fut_anchor <- spawn_months_fut
+saveRDS(spawn_months_fut_anchor, file = "output/spawn_months_fut_anchor.rds")
+
+```
+
+
+
+
+```{r}
+rear_mets_fut <- mets_fut_spp %>%
+  ungroup() %>% 
+  select(reach_id:LengthKM, K_r, CO_r) %>% 
+  pivot_longer(cols = c("K_r", "CO_r"), names_to = "Species", values_to = "present") %>% 
+  filter(present > 0)
+
+rear_months_fut <- rear_mets_fut %>% 
+  ungroup() %>% 
+  select(reach_id:Aug_mn, Species, LengthKM, scenf) %>% 
+  pivot_longer(cols = June_mn:Aug_mn, names_to = "Month")
+
+rear_months_fut <- rear_months_fut %>% 
+  mutate(Species = factor(Species, levels = c("K_r", "CO_r"),
+                          labels = c("Chinook Salmon", "Coho Salmon")),
+         Month = factor(Month, levels = c("June_mn", "July_mn", "Aug_mn"),
+                        labels = c("June", "July", "August")),
+         scen_cuts = cut(value, breaks = 1:17)) 
+
+rear_months_fut_anchor <- rear_months_fut
+saveRDS(rear_months_fut_anchor, file = "output/rear_months_fut_anchor.rds")
+
+
+```
+
+
+```{r}
+cat_mets_fut_anchor <- left_join(cat_spp, mets_fut, by = c("rca_id" = "reach_id"))
+saveRDS(cat_mets_fut_anchor, file = "output/cat_mets_fut_anchor.rds")
+
+```
+
+Predictions filtered to salmon habitats only for heatmap. Need date and year and huc_12 so can create a faceted heatmap as well.
+
+```{r}
+preds <- readRDS(file = "output/preds.rds")
+
+preds_salmon <- left_join(fl_spp_tbl %>% 
+                            select(reach_id, K_s, CO_s, K_r, CO_r) %>% 
+                            filter(K_s > 0 | K_r > 0 | CO_r > 0 | CO_s > 0),
+                          preds)
+
+saveRDS(preds_salmon, "output/preds_salmon.rds")
+
+```
+
+
