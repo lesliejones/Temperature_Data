@@ -2,11 +2,5 @@
 .Rhistory
 .RData
 .Ruserdata
-Spatial_data
-future
-.pdf
-output/For Sue
-output/new_data.Rdata
-output/preds.Rdata
-output
-output/data_catalog
+output/data_catalog/
+output/large_files/

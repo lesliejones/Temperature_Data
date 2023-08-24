@@ -55,7 +55,7 @@ Centering predictors addresses structual collinearity for interactions and squar
 ```{r}
 
 #Note this data frame has 3-day air only.
-load(file = "output/temp.dm.Rdata")
+temp.dm <- readRDS(file = "output/temp.dm.rds")
 
 
 temp.dm <- temp.dm %>% 
@@ -104,6 +104,18 @@ temp.dm <- temp.dm %>%
 
 ```
 
+
+# Example of hysteresis
+
+make a plot showing differences in rising and fall limbs for lower anchor site.
+
+```{r}
+temp.dm %>% 
+  filter(Site == "CIK14") %>% 
+  ggplot(aes(x = tair3, y = mean, color = season)) +
+  geom_point() +
+  geom_smooth()
+```
 
 # Explore covariates to include in model
 
